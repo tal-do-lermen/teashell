@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — D-Bus e serviços do sistema</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 05/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>D-Bus e serviços do sistema</h1>
+    <p class="lead">Notificações, volume, Wi-Fi, Bluetooth, bateria e brilho: no Linux desktop moderno, quase tudo isso conversa por <strong>D-Bus</strong>. Uma página só para o barramento + os seis serviços que o shell vai consumir.</p>
+
+    <h2>D-Bus</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>D-Bus</li>
+      <li>Session Bus</li>
+      <li>System Bus</li>
+      <li>Object</li>
+      <li>Interface</li>
+      <li>Method</li>
+      <li>Property</li>
+      <li>Signal</li>
+      <li>ObjectManager</li>
+      <li>D-Bus introspection</li>
+    </ul>
+    <p>Biblioteca Rust: <a href="https://docs.rs/zbus"><code>zbus</code></a> — pura em Rust, API async (tokio), com derive macros.</p>
+    <p>Entenda principalmente a diferença entre:</p>
+<pre class="diagram"><code>Method
+Property
+Signal</code></pre>
+    <p>e quando utilizar cada um:</p>
+    <table>
+      <tr><th>Tipo</th><th>Semântica</th><th>Exemplo</th></tr>
+      <tr><td><strong>Method</strong></td><td>chamada request/response, o chamador espera</td><td><code>Notify(...)</code>, <code>SetVolume(50)</code></td></tr>
+      <tr><td><strong>Property</strong></td><td>valor consultável/alterável, com <code>PropertiesChanged</code> embutido</td><td><code>org.freedesktop.NetworkManager.State</code></td></tr>
+      <tr><td><strong>Signal</strong></td><td>broadcast, sem resposta — o "event emitter"</td><td>notificação chegou, device apareceu</td></tr>
+    </table>
+    <p class="muted">Em termos do shell: Property + signal <code>PropertiesChanged</code> para <em>observar</em>; Method para <em>comandar</em>; Signal para <em>acontecimentos</em>.</p>
+
+    <h2>Exemplo 6 — cliente D-Bus: bateria via UPower</h2>
+    <p>Um cliente completo: lê a propriedade <code>Percentage</code> do UPower e fica escutando <code>PropertiesChanged</code> — o indicador de bateria da barra, sem polling.</p>
+<pre><code><span class="cm">// Cargo.toml:</span>
+<span class="cm">// [dependencies]</span>
+<span class="cm">// zbus = { version = "4", features = ["tokio"] }</span>
+<span class="cm">// tokio = { version = "1", features = ["full"] }</span>
+<span class="cm">// futures = "0.3"</span>
+
+<span class="kw">use</span> futures::<span class="ty">StreamExt</span>;
+<span class="kw">use</span> zbus::proxy;
+
+<span class="cm">// derive que gera o proxy tipado a partir da interface D-Bus</span>
+<span class="at">#[proxy(
+    interface = "org.freedesktop.UPower.Device",
+    default_service = "org.freedesktop.UPower",
+    default_path = "/org/freedesktop/UPower/devices/DisplayDevice"
+)]</span>
+<span class="kw">trait</span> <span class="ty">UPowerDevice</span> {
+    <span class="at">#[zbus(property)]</span>
+    <span class="kw">fn</span> <span class="fn">percentage</span>(&amp;<span class="kw">self</span>) -&gt; zbus::<span class="ty">Result</span>&lt;<span class="ty">f64</span>&gt;;
+
+    <span class="at">#[zbus(property)]</span>
+    <span class="kw">fn</span> <span class="fn">state</span>(&amp;<span class="kw">self</span>) -&gt; zbus::<span class="ty">Result</span>&lt;<span class="ty">u32</span>&gt;;  <span class="cm">// 1=carregando, 2=descarregando, 4=cheia</span>
+}
+
+<span class="at">#[tokio::main]</span>
+<span class="kw">async</span> <span class="kw">fn</span> <span class="fn">main</span>() -&gt; zbus::<span class="ty">Result</span>&lt;()&gt; {
+    <span class="cm">// DisplayDevice = a soma de todas as baterias</span>
+    <span class="kw">let</span> conn = zbus::<span class="ty">Connection</span>::<span class="fn">system</span>().<span class="kw">await</span>?;   <span class="cm">// UPower vive no SYSTEM bus</span>
+    <span class="kw">let</span> bateria = <span class="ty">UPowerDeviceProxy</span>::<span class="fn">new</span>(&amp;conn).<span class="kw">await</span>?;
+
+    <span class="ma">println!</span>(<span class="st">"bateria: {:.1}%"</span>, bateria.<span class="fn">percentage</span>().<span class="kw">await</span>?);
+
+    <span class="cm">// PropertiesChanged como Stream — dispara quando a propriedade muda</span>
+    <span class="kw">let</span> <span class="kw">mut</span> changes = bateria.<span class="fn">receive_percentage_changed</span>().<span class="kw">await</span>;
+    <span class="kw">while</span> <span class="kw">let</span> <span class="ty">Some</span>(change) = changes.<span class="fn">next</span>().<span class="kw">await</span> {
+        <span class="kw">let</span> novo = change.<span class="fn">get</span>().<span class="kw">await</span>?;
+        <span class="ma">println!</span>(<span class="st">"bateria mudou: {novo:.1}%"</span>);
+        <span class="cm">// no shell: tx.send(Evento::Bateria { ... })</span>
+    }
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <ul class="topics">
+      <li><code>#[proxy]</code> gera <code>UPowerDeviceProxy</code> em compilação — methods viram <code>async fn</code>, properties viram getters + stream de mudanças. É o <code>?</code> de tipagem: erros de nome de interface aparecem em compilação.</li>
+      <li><strong>Session bus</strong> para apps (notifications), <strong>system bus</strong> para serviços de máquina (UPower, NetworkManager, BlueZ) — por isso <code>Connection::system()</code> aqui.</li>
+    </ul>
+    <div class="refs">
+      <p>Para explorar o D-Bus REAL da sua sessão antes de codificar:</p>
+<pre class="terminal"><code>busctl --user tree
+busctl introspect org.freedesktop.UPower /org/freedesktop/UPower/devices/DisplayDevice</code></pre>
+      <ul>
+        <li><a href="https://dbus2.github.io/zbus/">zbus book</a> — o tutorial oficial, incluindo o <code>#[proxy]</code> e servidores</li>
+        <li><a href="https://docs.rs/zbus">docs.rs/zbus</a> — a fonte da verdade por versão</li>
+        <li><a href="https://upower.freedesktop.org/docs/">referência da API do UPower</a></li>
+      </ul>
+    </div>
+
+    <h2>Notificações</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li><code>org.freedesktop.Notifications</code></li>
+      <li>Desktop Notifications Specification</li>
+      <li><code>Notify</code></li>
+      <li><code>GetCapabilities</code></li>
+      <li><code>GetServerInformation</code></li>
+      <li>Actions</li>
+      <li>Hints</li>
+      <li>Timeout</li>
+      <li>Notification replacement</li>
+      <li>Notification IDs</li>
+    </ul>
+    <p>Arquitetura — aqui o shell é o <strong>servidor</strong> do serviço (os apps é que chamam):</p>
+<pre class="diagram"><code>Aplicação
+   ↓
+D-Bus
+   ↓
+Notification service
+   ↓
+Shell
+   ↓
+Notification UI</code></pre>
+
+    <h2>Exemplo 7 — servidor D-Bus: o daemon de notificações</h2>
+    <p>Aqui o papel inverte: o shell <strong>exporta</strong> a interface <code>org.freedesktop.Notifications</code> e os apps chamam você. Com zbus, o serviço é um struct comum.</p>
+<pre><code><span class="kw">use</span> std::collections::<span class="ty">HashMap</span>;
+<span class="kw">use</span> std::sync::atomic::{<span class="ty">AtomicU32</span>, <span class="ty">Ordering</span>};
+<span class="kw">use</span> std::sync::mpsc::<span class="ty">Sender</span>;
+<span class="kw">use</span> zbus::zvariant::<span class="ty">Value</span>;
+
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Notificacao</span> {
+    <span class="kw">pub</span> app: <span class="ty">String</span>,
+    <span class="kw">pub</span> titulo: <span class="ty">String</span>,
+    <span class="kw">pub</span> corpo: <span class="ty">String</span>,
+}
+
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">NotificationServer</span> {
+    tx: <span class="ty">Sender</span>&lt;<span class="ty">Notificacao</span>&gt;,          <span class="cm">// manda para o event bus do shell</span>
+    proximo_id: <span class="ty">AtomicU32</span>,
+}
+
+<span class="cm">// "exporta" o struct como interface D-Bus</span>
+<span class="at">#[zbus::interface(name = "org.freedesktop.Notifications")]</span>
+<span class="kw">impl</span> <span class="ty">NotificationServer</span> {
+    <span class="kw">fn</span> <span class="fn">notify</span>(
+        &amp;<span class="kw">self</span>,
+        app_name: &amp;<span class="ty">str</span>,
+        replaces_id: <span class="ty">u32</span>,               <span class="cm">// &gt;0 = substituir notificação existente</span>
+        _app_icon: &amp;<span class="ty">str</span>,
+        summary: &amp;<span class="ty">str</span>,
+        body: &amp;<span class="ty">str</span>,
+        _actions: <span class="ty">Vec</span>&lt;&amp;<span class="ty">str</span>&gt;,
+        _hints: <span class="ty">HashMap</span>&lt;&amp;<span class="ty">str</span>, <span class="ty">Value</span>&lt;<span class="lt">'_</span>&gt;&gt;,
+        expire_timeout: <span class="ty">i32</span>,            <span class="cm">// -1 = padrão do servidor, 0 = nunca expira</span>
+    ) -&gt; <span class="ty">u32</span> {
+        <span class="kw">let</span> id = <span class="kw">self</span>.proximo_id.<span class="fn">fetch_add</span>(<span class="nu">1</span>, <span class="ty">Ordering</span>::<span class="ty">SeqCst</span>);
+        <span class="kw">let</span> _ = <span class="kw">self</span>.tx.<span class="fn">send</span>(<span class="ty">Notificacao</span> {
+            app: app_name.<span class="fn">into</span>(),
+            titulo: summary.<span class="fn">into</span>(),
+            corpo: body.<span class="fn">into</span>(),
+        });
+        id                              <span class="cm">// o chamador guarda o id p/ fechar depois</span>
+    }
+
+    <span class="kw">fn</span> <span class="fn">get_capabilities</span>(&amp;<span class="kw">self</span>) -&gt; <span class="ty">Vec</span>&lt;<span class="ty">String</span>&gt; {
+        <span class="ma">vec!</span>[<span class="st">"body"</span>.<span class="fn">into</span>()]             <span class="cm">// declare só o que sua UI suporta</span>
+    }
+
+    <span class="kw">fn</span> <span class="fn">get_server_information</span>(&amp;<span class="kw">self</span>) -&gt; (<span class="ty">String</span>, <span class="ty">String</span>, <span class="ty">String</span>, <span class="ty">u32</span>) {
+        (<span class="st">"meushell"</span>.<span class="fn">into</span>(), <span class="st">"eu"</span>.<span class="fn">into</span>(), <span class="st">"0.1.0"</span>.<span class="fn">into</span>(), <span class="nu">1</span>)
+    }
+
+    <span class="kw">fn</span> <span class="fn">close_notification</span>(&amp;<span class="kw">self</span>, _id: <span class="ty">u32</span>) {
+        <span class="cm">// emitir Evento::FecharNotificacao no bus</span>
+    }
+}
+
+<span class="at">#[tokio::main]</span>
+<span class="kw">async</span> <span class="kw">fn</span> <span class="fn">main</span>() -&gt; zbus::<span class="ty">Result</span>&lt;()&gt; {
+    <span class="kw">let</span> (tx, _rx) = std::sync::mpsc::<span class="fn">channel</span>();
+    <span class="kw">let</span> conn = zbus::<span class="ty">Connection</span>::<span class="fn">session</span>().<span class="kw">await</span>?;   <span class="cm">// apps usam o SESSION bus</span>
+
+    conn.<span class="fn">object_server</span>().<span class="fn">at</span>(
+        <span class="st">"/org/freedesktop/Notifications"</span>,
+        <span class="ty">NotificationServer</span> { tx, proximo_id: <span class="ty">AtomicU32</span>::<span class="fn">new</span>(<span class="nu">1</span>) },
+    ).<span class="kw">await</span>?;
+
+    <span class="cm">// disputa o nome — o daemon anterior deve liberar (spec obriga!)</span>
+    conn.<span class="fn">request_name</span>(<span class="st">"org.freedesktop.Notifications"</span>).<span class="kw">await</span>?;
+
+    <span class="cm">// segura a conexão viva para sempre</span>
+    futures::future::pending::&lt;()&gt;().<span class="kw">await</span>;
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <div class="refs">
+      <ul>
+        <li><a href="https://specifications.freedesktop.org/notification-spec/latest/">Desktop Notifications Spec</a> — leia a seção do protocolo: os 3 methods e os hints documentados</li>
+        <li><a href="https://dbus2.github.io/zbus/">zbus book — capítulo de servidores</a> (o <code>#[interface]</code> e <code>object_server</code>)</li>
+        <li>Teste sem UI: <code>notify-send "teste" "corpo"</code> deve acionar seu <code>notify()</code></li>
+      </ul>
+    </div>
+
+    <h2>Áudio</h2>
+    <p>Em sistemas Linux modernos, pesquise primeiro:</p>
+    <ul class="topics">
+      <li>PipeWire</li>
+      <li>WirePlumber</li>
+      <li>PipeWire graph</li>
+      <li>Nodes</li>
+      <li>Devices</li>
+      <li>Sinks</li>
+      <li>Sources</li>
+      <li>Default sink</li>
+      <li>Default source</li>
+      <li>Volume</li>
+      <li>Mute</li>
+      <li>Metadata</li>
+    </ul>
+    <p>Também estude:</p>
+    <ul class="topics">
+      <li>PulseAudio compatibility layer</li>
+    </ul>
+    <div class="note">
+      <p>Para o shell, a arquitetura deve considerar PipeWire/WirePlumber em vez de depender exclusivamente da API antiga do PulseAudio. Caminho comum: observar o grafo via a API do WirePlumber ou as interfaces de mixer expostas sobre D-Bus/Pulse compat.</p>
+    </div>
+
+    <h2>NetworkManager</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>NetworkManager D-Bus API</li>
+      <li><code>org.freedesktop.NetworkManager</code></li>
+      <li>Devices</li>
+      <li>Access Points</li>
+      <li>Connections</li>
+      <li>Profiles</li>
+      <li>Connection state</li>
+      <li>Wi-Fi scanning</li>
+      <li>Authentication</li>
+      <li>Secrets</li>
+    </ul>
+    <div class="warn">
+      <p>Evite usar parsing de <code>nmcli</code> como arquitetura principal. Pode ser útil para debugging, mas o shell deve preferencialmente conversar com o serviço através da API D-Bus estruturada (o <code>zbus</code> até gera proxies a partir da introspecção do NM).</p>
+    </div>
+
+    <h2>Bluetooth</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>BlueZ</li>
+      <li>BlueZ D-Bus API</li>
+      <li>ObjectManager</li>
+      <li><code>Adapter1</code></li>
+      <li><code>Device1</code></li>
+      <li><code>Agent1</code></li>
+      <li>Discovery</li>
+      <li>Pairing</li>
+      <li>Connecting</li>
+      <li>Disconnecting</li>
+      <li>Device properties</li>
+    </ul>
+    <p>Entenda como o shell pode acompanhar mudanças através de D-Bus signals — o <code>ObjectManager</code> entrega <code>InterfacesAdded</code>/<code>InterfacesRemoved</code>: dispositivos aparecem e somem como eventos, não por polling.</p>
+
+    <h2>Energia</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>UPower</li>
+      <li>UPower D-Bus API</li>
+      <li>Battery</li>
+      <li>Charging state</li>
+      <li>Percentage</li>
+      <li>Power profiles</li>
+      <li>Power Profiles Daemon</li>
+    </ul>
+    <p>Entenda a diferença entre:</p>
+    <ul class="topics">
+      <li>informação da bateria (UPower: porcentagem, estado de carga)</li>
+      <li>gerenciamento de energia (política do sistema)</li>
+      <li>perfil de performance (power-profiles-daemon: performance/balanced/power-saver)</li>
+    </ul>
+
+    <h2>Brilho</h2>
+    <p>Para displays internos:</p>
+    <ul class="topics">
+      <li>Linux backlight</li>
+      <li><code>/sys/class/backlight</code></li>
+      <li>brightness interfaces</li>
+      <li><code>brightnessctl</code></li>
+    </ul>
+    <p>Para monitores externos:</p>
+    <ul class="topics">
+      <li>DDC/CI</li>
+      <li>MCCS</li>
+      <li>VCP</li>
+      <li><code>ddcutil</code></li>
+    </ul>
+    <p>Pesquise também:</p>
+    <ul class="topics">
+      <li>Display identification</li>
+      <li>EDID</li>
+      <li>Monitor capabilities</li>
+    </ul>
+
+    <h2>Ordem sugerida de estudo</h2>
+    <ol>
+      <li>D-Bus + zbus (fazer um cliente de exemplo listando devices do BlueZ)</li>
+      <li>UPower (o mais simples: uma property + um signal)</li>
+      <li>Notifications (agora como servidor do serviço)</li>
+      <li>NetworkManager e PipeWire (os mais ricos)</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://dbus.freedesktop.org/doc/dbus-specification.html">D-Bus Specification</a></li>
+      <li><a href="https://docs.rs/zbus">zbus</a></li>
+      <li><a href="https://specifications.freedesktop.org/notification-spec/latest/">Desktop Notifications Spec</a></li>
+      <li><a href="https://pipewire.org">PipeWire</a> · <a href="https://gitlab.freedesktop.org/pipewire/wireplumber">WirePlumber</a></li>
+      <li><a href="https://networkmanager.dev">NetworkManager</a></li>
+      <li><a href="http://www.bluez.org">BlueZ</a></li>
+      <li><a href="https://upower.freedesktop.org">UPower</a></li>
+      <li><a href="https://gitlab.freedesktop.org/hadess/power-profiles-daemon">power-profiles-daemon</a></li>
+      <li><a href="https://www.ddcutil.com">ddcutil (DDC/CI)</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="arquitetura.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Arquitetura interna</span>
+  </a>
+  <a class="next" href="componentes.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Componentes do shell</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

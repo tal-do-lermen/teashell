@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Layer Shell</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 02/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>Layer Shell</h1>
+    <p class="lead">Esta é uma das partes mais importantes para o shell: é o mecanismo que permite à barra dizer ao compositor <em>"quero ficar colada no topo, em todas as telas"</em>.</p>
+
+    <h2>O que pesquisar</h2>
+    <ul class="topics">
+      <li><code>wlr-layer-shell</code> — a extensão do protocolo (originada no wlroots, adotada por Sway/Hyprland/Niri)</li>
+      <li><code>zwlr_layer_shell_v1</code> — o objeto global da extensão</li>
+      <li><code>zwlr_layer_surface_v1</code> — a surface especial do shell</li>
+      <li>Layer surfaces</li>
+      <li>Background layer</li>
+      <li>Bottom layer</li>
+      <li>Top layer</li>
+      <li>Overlay layer</li>
+      <li>Anchors</li>
+      <li>Margins</li>
+      <li>Exclusive zone</li>
+      <li>Keyboard interactivity</li>
+      <li>Output selection</li>
+      <li>Namespace</li>
+    </ul>
+
+    <h2>Os quatro layers</h2>
+    <table>
+      <tr><th>Layer</th><th>Valor</th><th>Uso no shell</th></tr>
+      <tr><td>Background</td><td>0</td><td>wallpaper</td></tr>
+      <tr><td>Bottom</td><td>1</td><td>dock, widgets de área de trabalho</td></tr>
+      <tr><td>Top</td><td>2</td><td>barra, launcher, notificações</td></tr>
+      <tr><td>Overlay</td><td>3</td><td>lock screen, OSD de volume acima de tudo</td></tr>
+    </table>
+
+    <h2>A conversa com o compositor</h2>
+    <p>Entenda como uma barra informa suas intenções:</p>
+<pre class="diagram"><code>"quero ficar no topo"
+"quero ocupar esta área"
+"quero reservar espaço para outros aplicativos"</code></pre>
+    <p>Traduzindo para os conceitos do protocolo:</p>
+    <ul class="topics">
+      <li><strong>Anchor</strong> — em quais bordas a surface gruda (top, bottom, left, right). Anchor em duas bordas opostas + exclusive zone = barra full-width.</li>
+      <li><strong>Margin</strong> — distância das bordas ancoradas.</li>
+      <li><strong>Exclusive zone</strong> — quantos pixels o compositor deve <em>reservar</em> para você (janelas de apps não cobrem nem ficam por baixo da barra).</li>
+      <li><strong>Keyboard interactivity</strong> — <code>none</code> (barra), <code>exclusive</code> (launcher/lock), <code>on-demand</code>.</li>
+      <li><strong>Output</strong> — em qual monitor a surface nasce (ou all).</li>
+      <li><strong>Namespace</strong> — identificador string (ex.: <code>"myshell/bar"</code>) usado por compositores para regras por-surface.</li>
+    </ul>
+
+    <h2>Janela normal vs layer surface vs popup vs subsurface</h2>
+    <p>Pesquise também as diferenças entre:</p>
+    <table>
+      <tr><th>Superfície</th><th>O que é</th><th>Exemplo no shell</th></tr>
+      <tr><td>Janela normal (xdg_toplevel)</td><td>app comum, o compositor a gerencia/decora/move</td><td>— (não é o caso do shell)</td></tr>
+      <tr><td>Layer surface</td><td>área do shell posicionada por anchors/layers</td><td>barra, wallpaper, lock</td></tr>
+      <tr><td>Popup (xdg_popup)</td><td>sub-janela posicionada relativa a um pai (grab de input)</td><td>menu do launcher, tooltip</td></tr>
+      <tr><td>Subsurface</td><td>sub-área sincronizada com a surface pai (sem input próprio)</td><td>overlay de vídeo, efeito dentro da barra</td></tr>
+    </table>
+
+    <div class="tip">
+      <p>Em Rust, a extensão fica em <code>wayland-protocols-wlr</code> (crate) — o tipo <code>Shell</code>/<code>LayerSurface</code> embrulha <code>zwlr_layer_surface_v1</code>. Estude os exemplos de layer-shell do repositório <code>wayland-rs</code> antes de tentar do zero.</p>
+    </div>
+
+    <h2>Exemplo 2 — a barra com layer shell</h2>
+    <p>O código que materializa aquela conversa "quero ficar no topo": binds da extensão, configuração da layer surface e o ciclo configure → ack → render.</p>
+<pre><code><span class="cm">// Cargo.toml:</span>
+<span class="cm">// [dependencies]</span>
+<span class="cm">// wayland-client = "0.31"</span>
+<span class="cm">// wayland-protocols-wlr = { version = "0.3", features = ["client"] }</span>
+
+<span class="kw">use</span> wayland_client::{
+    protocol::{wl_compositor, wl_registry, wl_surface},
+    <span class="ty">Connection</span>, <span class="ty">Dispatch</span>, <span class="ty">QueueHandle</span>,
+};
+<span class="kw">use</span> wayland_protocols_wlr::layer_shell::v1::client::{
+    zwlr_layer_shell_v1::{<span class="ty">Layer</span>, <span class="ty">ZwlrLayerShellV1</span>},
+    zwlr_layer_surface_v1::{<span class="kw">self</span>, <span class="ty">Anchor</span>, <span class="ty">KeyboardInteractivity</span>, <span class="ty">ZwlrLayerSurfaceV1</span>},
+};
+
+<span class="kw">struct</span> <span class="ty">App</span> {
+    running: <span class="ty">bool</span>,
+    compositor: <span class="ty">Option</span>&lt;wl_compositor::<span class="ty">WlCompositor</span>&gt;,
+    layer_shell: <span class="ty">Option</span>&lt;<span class="ty">ZwlrLayerShellV1</span>&gt;,
+}
+
+<span class="cm">// registry: descubra os DOIS globals que a barra precisa</span>
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;wl_registry::<span class="ty">WlRegistry</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, registry: &amp;wl_registry::<span class="ty">WlRegistry</span>, event: wl_registry::<span class="ty">Event</span>,
+             _: &amp;(), _: &amp;<span class="ty">Connection</span>, qh: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">if</span> <span class="kw">let</span> wl_registry::<span class="ty">Event</span>::<span class="ty">Global</span> { name, interface, version } = event {
+            <span class="kw">match</span> interface.<span class="fn">as_str</span>() {
+                <span class="st">"wl_compositor"</span> =&gt; {
+                    state.compositor = <span class="ty">Some</span>(registry.bind::&lt;wl_compositor::<span class="ty">WlCompositor</span>, _, _&gt;(
+                        name, version.<span class="fn">min</span>(<span class="nu">4</span>), qh, ()));
+                }
+                <span class="st">"zwlr_layer_shell_v1"</span> =&gt; {
+                    state.layer_shell = <span class="ty">Some</span>(registry.bind::&lt;<span class="ty">ZwlrLayerShellV1</span>, _, _&gt;(
+                        name, version.<span class="fn">min</span>(<span class="nu">4</span>), qh, ()));
+                }
+                _ =&gt; {}
+            }
+        }
+    }
+}
+
+<span class="kw">impl</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">montar_barra</span>(&amp;<span class="kw">self</span>, qh: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">let</span> compositor = <span class="kw">self</span>.compositor.<span class="fn">as_ref</span>().<span class="fn">expect</span>(<span class="st">"sem wl_compositor"</span>);
+        <span class="kw">let</span> shell = <span class="kw">self</span>.layer_shell.<span class="fn">as_ref</span>().<span class="fn">expect</span>(<span class="st">"compositor sem layer-shell"</span>);
+
+        <span class="kw">let</span> surface: wl_surface::<span class="ty">WlSurface</span> = compositor.<span class="fn">create_surface</span>(qh);
+
+        <span class="kw">let</span> layer_surface: <span class="ty">ZwlrLayerSurfaceV1</span> = shell.<span class="fn">get_layer_surface</span>(
+            &amp;surface,
+            <span class="ty">None</span>,                    <span class="cm">// None = em TODOS os monitores</span>
+            <span class="ty">Layer</span>::<span class="ty">Top</span>,              <span class="cm">// camada da barra (veja a tabela acima)</span>
+            <span class="st">"meushell/bar"</span>.<span class="fn">into</span>(),   <span class="cm">// namespace</span>
+            qh,
+            (),
+        );
+
+        <span class="cm">// "quero ficar no topo, ocupando toda a largura"</span>
+        layer_surface.<span class="fn">set_anchor</span>(<span class="ty">Anchor</span>::<span class="ty">TOP</span> | <span class="ty">Anchor</span>::<span class="ty">LEFT</span> | <span class="ty">Anchor</span>::<span class="ty">RIGHT</span>);
+        <span class="cm">// "reservem 32px para mim — nada pode cobrir esta área"</span>
+        layer_surface.<span class="fn">set_exclusive_zone</span>(<span class="nu">32</span>);
+        <span class="cm">// barra não digita: teclado só sob demanda</span>
+        layer_surface.<span class="fn">set_keyboard_interactivity</span>(<span class="ty">KeyboardInteractivity</span>::<span class="ty">None</span>);
+        <span class="cm">// largura 0 = "esticar entre os anchors"; altura 32</span>
+        layer_surface.<span class="fn">set_size</span>(<span class="nu">0</span>, <span class="nu">32</span>);
+
+        <span class="cm">// publica a surface — agora o compositor responde com Configure</span>
+        surface.<span class="fn">commit</span>();
+    }
+}
+
+<span class="cm">// o ciclo obrigatório: compositor propõe o tamanho -&gt; você confirma -&gt; desenha</span>
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;<span class="ty">ZwlrLayerSurfaceV1</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(_state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, layer_surface: &amp;<span class="ty">ZwlrLayerSurfaceV1</span>,
+             event: zwlr_layer_surface_v1::<span class="ty">Event</span>, _: &amp;(), _: &amp;<span class="ty">Connection</span>, _: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">if</span> <span class="kw">let</span> zwlr_layer_surface_v1::<span class="ty">Event</span>::<span class="ty">Configure</span> { serial, .. } = event {
+            layer_surface.<span class="fn">ack_configure</span>(serial);   <span class="cm">// OBRIGATÓRIO antes de desenhar</span>
+            <span class="cm">// ... aqui entra o renderer (Exemplo 3)</span>
+            <span class="ma">println!</span>(<span class="st">"barra configurada — hora de renderizar"</span>);
+        }
+    }
+}</code></pre>
+    <p>Pontos de atenção:</p>
+    <ul class="topics">
+      <li><code>set_size(0, 32)</code> — zero significa "o compositor decide" (derivado dos anchors). O valor real chega no <code>Configure</code>.</li>
+      <li><code>set_exclusive_zone(32)</code> é o que impede janelas de apps de ficarem atrás da barra. Para o wallpaper, use <code>-1</code> (ignora exclusive zones).</li>
+      <li>Desenhar <strong>sem</strong> ter feito <code>ack_configure</code> é erro de protocolo — o compositor pode matar seu cliente.</li>
+      <li>Nomes de módulos gerados variam entre versões do crate — quando algo não compila, a fonte da verdade é o docs.rs da versão no seu <code>Cargo.toml</code>.</li>
+    </ul>
+    <div class="refs">
+      <ul>
+        <li><a href="https://wayland.app/protocols/wlr-layer-shell-unstable-v1">spec do wlr-layer-shell-unstable-v1</a> — leia os requests de <code>zwlr_layer_surface_v1</code>: é a lista exata do que dá para configurar</li>
+        <li><a href="https://docs.rs/wayland-protocols-wlr">docs.rs/wayland-protocols-wlr</a></li>
+        <li><a href="https://github.com/Smithay/client-toolkit/tree/master/examples">exemplos do client-toolkit (sctk)</a> — o sctk embrulha tudo isso em tipos de alto nível (<code>LayerSurface</code>, com attach de buffers incluso)</li>
+      </ul>
+    </div>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://wayland.app/protocols/wlr-layer-shell-unstable-v1">Spec do wlr-layer-shell-unstable-v1</a></li>
+      <li><a href="https://github.com/Smithay/client-toolkit">Smithay client-toolkit (sctk)</a> — helpers de alto nível, inclui layer shell</li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="wayland.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Wayland: fundamentos e Rust</span>
+  </a>
+  <a class="next" href="rendering-ui.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Rendering, UI Toolkit e Input</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

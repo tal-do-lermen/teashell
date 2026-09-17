@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 07 — Concorrência: threads, Arc, Mutex e channels</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 07/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Concorrência: threads, Arc, Mutex e channels</h1>
+    <p class="lead">Rust resolve data races <strong>em tempo de compilação</strong>. Em Java, <code>synchronized</code> é responsabilidade e disciplina sua; em Rust, o compilador recusa código que compartilha estado de forma insegura. É o famoso <em>"fearless concurrency"</em>.</p>
+
+    <h2>Threads básicas</h2>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="ty">Thread</span> t = <span class="kw">new</span> <span class="ty">Thread</span>(() -&gt; {
+    <span class="ty">System</span>.out.<span class="fn">println</span>(<span class="st">"worker"</span>);
+});
+t.<span class="fn">start</span>();
+t.<span class="fn">join</span>();</code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">use</span> std::thread;
+
+<span class="kw">let</span> handle = thread::<span class="fn">spawn</span>(|| {
+    <span class="ma">println!</span>(<span class="st">"worker"</span>);
+});
+handle.<span class="fn">join</span>().<span class="fn">unwrap</span>();</code></pre>
+      </div>
+    </div>
+    <p>Detalhe de ownership: a closure passada para a thread precisa <strong>possuir</strong> o que usa (a thread pode sobreviver ao escopo), por isso o <code>move</code>:</p>
+<pre><code><span class="kw">let</span> dados = <span class="ma">vec!</span>[<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>];
+<span class="kw">let</span> handle = thread::<span class="fn">spawn</span>(<span class="kw">move</span> || {
+    <span class="ma">println!</span>(<span class="st">"{:?}"</span>, dados);    <span class="cm">// `dados` mudou de dono p/ a thread</span>
+});
+handle.<span class="fn">join</span>().<span class="fn">unwrap</span>();
+<span class="cm">// println!("{:?}", dados);     // ERRO: moved</span></code></pre>
+
+    <h2>O problema que o compilador resolve</h2>
+    <p>Em Java, isto compila e às vezes funciona (a pior classe de bug):</p>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="kw">class</span> <span class="ty">Contador</span> { <span class="ty">int</span> n = <span class="nu">0</span>; }
+<span class="kw">var</span> c = <span class="kw">new</span> <span class="ty">Contador</span>();
+<span class="kw">new</span> <span class="ty">Thread</span>(() -&gt; c.n++).<span class="fn">start</span>();
+<span class="kw">new</span> <span class="ty">Thread</span>(() -&gt; c.n++).<span class="fn">start</span>();
+<span class="cm">// compila. race condition em produção.</span>
+<span class="cm">// "funciona na minha máquina"</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">let</span> <span class="kw">mut</span> n = <span class="nu">0</span>;
+thread::<span class="fn">spawn</span>(|| n += <span class="nu">1</span>);   <span class="cm">// ERRO:</span>
+<span class="cm">// closure may outlive... e mesmo</span>
+<span class="cm">// com move: duas threads exigiriam</span>
+<span class="cm">// duas movimentações — impossível</span>
+<span class="cm">// compartilhar sem proteção explícita</span></code></pre>
+      </div>
+    </div>
+    <p>Por trás disso estão os marker traits <strong><code>Send</code></strong> (pode ser transferido entre threads) e <strong><code>Sync</code></strong> (pode ser referenciado de várias threads). Você não os implementa — a std os deriva automaticamente para tipos seguros e <em>remove</em> de tipos inseguros. O compilador usa isso para bloquear compartilhamento perigoso.</p>
+
+    <h2>Arc&lt;Mutex&lt;T&gt;&gt; — o padrão mais comum</h2>
+    <p>Para compartilhar estado mutável entre threads, você declara <em>como</em> compartilha:</p>
+<pre><code><span class="kw">use</span> std::sync::{<span class="ty">Arc</span>, <span class="ty">Mutex</span>};
+<span class="kw">use</span> std::thread;
+
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> contador = <span class="ty">Arc</span>::<span class="fn">new</span>(<span class="ty">Mutex</span>::<span class="fn">new</span>(<span class="nu">0u64</span>));
+
+    <span class="kw">let</span> <span class="kw">mut</span> handles = <span class="ma">vec!</span>[];
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="nu">0</span>..<span class="nu">10</span> {
+        <span class="kw">let</span> contador = <span class="ty">Arc</span>::<span class="fn">clone</span>(&amp;contador);   <span class="cm">// +1 no refcount, atômico</span>
+        handles.<span class="fn">push</span>(thread::<span class="fn">spawn</span>(<span class="kw">move</span> || {
+            <span class="kw">let</span> <span class="kw">mut</span> n = contador.<span class="fn">lock</span>().<span class="fn">unwrap</span>(); <span class="cm">// trava até obter</span>
+            *n += <span class="nu">1</span>;
+        }));                                      <span class="cm">// lock liberado ao sair do escopo (RAII)</span>
+    }
+    <span class="kw">for</span> h <span class="kw">in</span> handles { h.<span class="fn">join</span>().<span class="fn">unwrap</span>(); }
+
+    <span class="ma">println!</span>(<span class="st">"{}"</span>, *contador.<span class="fn">lock</span>().<span class="fn">unwrap</span>());    <span class="cm">// 10 — sempre</span>
+}</code></pre>
+    <table>
+      <tr><th>Rust</th><th>Java</th></tr>
+      <tr><td><code>Arc&lt;T&gt;</code></td><td>referência compartilhada gerenciada pelo GC (mas contagem atômica manual aqui)</td></tr>
+      <tr><td><code>Mutex&lt;T&gt;</code></td><td><code>synchronized</code> / <code>ReentrantLock</code> — mas o Mutex <strong>contém</strong> os dados (impossível acessar sem lock)</td></tr>
+      <tr><td><code>lock()</code> retorna um <em>guard</em></td><td>— liberar é automático ao sair do escopo: esquecer <code>unlock</code> é impossível</td></tr>
+      <tr><td><code>RwLock&lt;T&gt;</code></td><td><code>ReentrantReadWriteLock</code> — muitos leitores ou um escritor</td></tr>
+    </table>
+    <div class="note">
+      <p>A grande diferença conceitual: em Java, qualquer código pode acessar o campo compartilhado e <em>esquecer</em> de sincronizar. Em Rust, os dados <strong>estão dentro</strong> do Mutex — o único acesso possível é através do lock. A disciplina virou linguagem.</p>
+    </div>
+
+    <h2>Channels — passagem de mensagens</h2>
+    <p>O lema de Go vale aqui: <em>"não comuniquem estado compartilhando; compartilhem estado comunicando"</em>.</p>
+<pre><code><span class="kw">use</span> std::sync::mpsc;          <span class="cm">// multi-producer, single-consumer</span>
+<span class="kw">use</span> std::thread;
+
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> (tx, rx) = mpsc::<span class="fn">channel</span>();     <span class="cm">// (transmissor, receptor)</span>
+
+    <span class="kw">for</span> id <span class="kw">in</span> <span class="nu">0</span>..<span class="nu">3</span> {
+        <span class="kw">let</span> tx = tx.<span class="fn">clone</span>();            <span class="cm">// um tx por produtor</span>
+        thread::<span class="fn">spawn</span>(<span class="kw">move</span> || {
+            <span class="kw">let</span> msg = <span class="ma">format!</span>(<span class="st">"evento da thread {id}"</span>);
+            tx.<span class="fn">send</span>(msg).<span class="fn">unwrap</span>();
+        });
+    }
+    <span class="fn">drop</span>(tx);                           <span class="cm">// encerra produtor principal</span>
+
+    <span class="kw">for</span> recebida <span class="kw">in</span> rx {                <span class="cm">// itera até o canal fechar</span>
+        <span class="ma">println!</span>(<span class="st">"shell recebeu: {recebida}"</span>);
+    }
+}</code></pre>
+    <table>
+      <tr><th>Rust</th><th>Java</th></tr>
+      <tr><td><code>mpsc::channel()</code></td><td><code>BlockingQueue</code></td></tr>
+      <tr><td><code>tx.send(v)</code></td><td><code>queue.put(v)</code></td></tr>
+      <tr><td><code>rx.recv()</code></td><td><code>queue.take()</code></td></tr>
+    </table>
+    <div class="note">
+      <p>Canais são o coração da arquitetura que o shell vai usar: o event loop recebe eventos (Wayland, D-Bus, IPC) e distribui para módulos via canais. Guarde este padrão — a página de <a href="arquitetura.html">arquitetura</a> retoma o assunto.</p>
+    </div>
+
+    <h2>Onde cada ferramenta brilha no shell</h2>
+    <ul class="topics">
+      <li><strong>Canais (mpsc):</strong> event bus — Wayland/D-Bus/IPC publicam, módulos consomem.</li>
+      <li><strong><code>Arc&lt;RwLock&lt;T&gt;&gt;</code>:</strong> configuração e estado compartilhado, lido por muitos, escrito raramente (hot reload).</li>
+      <li><strong><code>Arc&lt;Mutex&lt;T&gt;&gt;</code>:</strong> estado pequeno e mutado com frequência.</li>
+      <li><strong>Threads puros:</strong> work dedicado (watch de arquivos, decode de imagem).</li>
+    </ul>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Spawne 5 threads que enviam "olá N" por um canal; o <code>main</code> imprime na ordem que chega.</li>
+      <li>Compartilhe um <code>Vec&lt;String&gt;</code> com <code>Arc&lt;Mutex&gt;</code>; cada thread insere seu nome; o main imprime o resultado final.</li>
+      <li>Simule um event bus: uma thread produtora gera números, o consumidor soma até receber <code>0</code> (use <code>enum Evento { Tick(u32), Fim }</code>).</li>
+      <li>Refaça o 3 com <strong>3</strong> produtores (dica: <code>tx.clone()</code>).</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch16-00-concurrency.html">The Book — Fearless Concurrency</a></li>
+      <li><a href="https://doc.rust-lang.org/std/sync/mpsc/index.html">std::sync::mpsc</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-06-collections.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Coleções, closures e iterators</span>
+  </a>
+  <a class="next" href="rust-08-async.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Async/await e Tokio</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

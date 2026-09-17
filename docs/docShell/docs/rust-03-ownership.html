@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 03 — Ownership, borrowing e lifetimes</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 03/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Ownership, borrowing e lifetimes</h1>
+    <p class="lead">O capítulo que mais diferencia Rust de Java/JS. Em vez de um <strong>garbage collector</strong>, o compilador gerencia a memória em tempo de compilação. Dominar isto = 80% da curva de aprendizado.</p>
+
+    <h2>O problema que ownership resolve</h2>
+    <p>Em Java/JS, o GC varre o heap periodicamente e libera o que ninguém referencia. Funciona, mas tem custo: pausas, overhead de memória, e nenhuma previsibilidade sobre <em>quando</em> a memória é liberada.</p>
+    <p>Rust troca o GC por três regras verificadas <strong>em tempo de compilação</strong> (zero custo em runtime):</p>
+    <ol>
+      <li>Cada valor tem um <strong>dono</strong> (owner) — a variável que o possui.</li>
+      <li>Só pode existir <strong>um dono</strong> por vez.</li>
+      <li>Quando o dono sai de escopo, o valor é <strong>descartado</strong> (memória liberada na hora, sem GC).</li>
+    </ol>
+
+    <h2>Move semantics</h2>
+    <p>O que acontece quando você "atribui" uma variável que vive no heap?</p>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="ty">String</span> a = <span class="st">"oi"</span>;
+<span class="ty">String</span> b = a;
+<span class="cm">// duas referências para o MESMO objeto</span>
+<span class="cm">// o GC cuida de tudo</span>
+<span class="ty">System</span>.out.<span class="fn">println</span>(a);  <span class="cm">// "oi"</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">let</span> a = <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"oi"</span>);
+<span class="kw">let</span> b = a;
+<span class="cm">// a propriedade foi MOVIDA para b</span>
+<span class="cm">// `a` não existe mais</span>
+<span class="ma">println!</span>(<span class="st">"{a}"</span>);  <span class="cm">// ERRO: borrow of moved value</span></code></pre>
+      </div>
+    </div>
+    <p>Isso não é uma cópia — é uma <strong>mudança de dono</strong>. Nada é liberado duas vezes, nada vaza: o compilador simplesmente proíbe usar a variável antiga.</p>
+    <div class="note">
+      <p>Tipos simples (<code>i32</code>, <code>f64</code>, <code>bool</code>, <code>char</code>, tuplas deles) são <strong><code>Copy</code></strong>: atribuição copia o valor e a original continua válida, como você espera de <code>int</code> em Java. A regra do move vale para tipos compostos (<code>String</code>, <code>Vec</code>, structs…).</p>
+    </div>
+
+    <h2>Borrowing: referências</h2>
+    <p>Mover tudo seria inviável. Para usar um valor sem assumir a posse, emprestamos com <code>&amp;</code>:</p>
+<pre><code><span class="kw">fn</span> <span class="fn">tamanho</span>(s: &amp;<span class="ty">String</span>) -&gt; <span class="ty">usize</span> {   <span class="cm">// recebe emprestado, não possui</span>
+    s.<span class="fn">len</span>()
+}
+
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> s = <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"hello"</span>);
+    <span class="kw">let</span> n = <span class="fn">tamanho</span>(&amp;s);            <span class="cm">// empresta…</span>
+    <span class="ma">println!</span>(<span class="st">"{s} tem {n} chars"</span>);   <span class="cm">// …e `s` continua válida</span>
+}</code></pre>
+    <p>Há dois tipos de empréstimo, com uma regra de ouro:</p>
+    <table>
+      <tr><th>Empréstimo</th><th>Regra</th><th>Analogia</th></tr>
+      <tr><td><code>&amp;T</code> (compartilhada)</td><td><strong>Quantas quiser</strong> simultaneamente, mas todos só leem</td><td>lock de leitura</td></tr>
+      <tr><td><code>&amp;mut T</code> (exclusiva)</td><td><strong>Uma só</strong> por vez, e nenhuma <code>&amp;</code> junto</td><td>lock de escrita</td></tr>
+    </table>
+<pre><code><span class="kw">let</span> <span class="kw">mut</span> v = <span class="ma">vec!</span>[<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>];
+
+<span class="kw">let</span> a = &amp;v;          <span class="cm">// ok</span>
+<span class="kw">let</span> b = &amp;v;          <span class="cm">// ok: vários leitores</span>
+<span class="ma">println!</span>(<span class="st">"{a:?} {b:?}"</span>);
+
+<span class="kw">let</span> m = &amp;<span class="kw">mut</span> v;      <span class="cm">// ok: leitores anteriores já encerraram</span>
+m.<span class="fn">push</span>(<span class="nu">4</span>);           <span class="cm">// exclusivo: muta</span>
+<span class="cm">// let x = &amp;v;       // ERRO se `m` ainda for usada depois</span></code></pre>
+    <div class="note">
+      <p>É exatamente o modelo de <code>ReentrantReadWriteLock</code> de Java — mas verificado <strong>em tempo de compilação</strong>, sem custo em runtime. Data races e mutação concorrente acidental ficam impossíveis na linguagem, não na disciplina do programador.</p>
+    </div>
+
+    <h2>Slices</h2>
+    <p>Referência para uma fatia de uma coleção — você já usou sem notar: <code>&amp;str</code> é um slice de string.</p>
+<pre><code><span class="kw">let</span> s = <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"desktop shell"</span>);
+<span class="kw">let</span> palavra: &amp;<span class="ty">str</span> = &amp;s[<span class="nu">0</span>..<span class="nu">7</span>];    <span class="cm">// "desktop"</span>
+<span class="kw">let</span> resto: &amp;<span class="ty">str</span> = &amp;s[<span class="nu">8</span>..];       <span class="cm">// "shell"</span>
+
+<span class="kw">let</span> nums = [<span class="nu">10</span>, <span class="nu">20</span>, <span class="nu">30</span>, <span class="nu">40</span>];
+<span class="kw">let</span> fatia: &amp;[<span class="ty">i32</span>] = &amp;nums[<span class="nu">1</span>..<span class="nu">3</span>]; <span class="cm">// [20, 30]</span></code></pre>
+
+    <h2>Lifetimes (sem pânico)</h2>
+    <p>Lifetime é o intervalo em que uma referência é válida. O compilador <strong>já verifica todos</strong> automaticamente; as anotações (<code>'a</code>) só aparecem quando ele precisa de ajuda para <em>relacionar</em> lifetimes de entradas e saídas:</p>
+<pre><code><span class="cm">// "a retorno vive tanto quanto a MENOR vida entre a e b"</span>
+<span class="kw">fn</span> mais_longa&lt;<span class="lt">'a</span>&gt;(a: &amp;<span class="lt">'a</span> <span class="ty">str</span>, b: &amp;<span class="lt">'a</span> <span class="ty">str</span>) -&gt; &amp;<span class="lt">'a</span> <span class="ty">str</span> {
+    <span class="kw">if</span> a.<span class="fn">len</span>() &gt;= b.<span class="fn">len</span>() { a } <span class="kw">else</span> { b }
+}</code></pre>
+    <ul>
+      <li>Anotar não muda nada em runtime — é só uma assinatura de contrato, como genéricos.</li>
+      <li>A maioria dos casos é inferida (<em>elision</em>): <code>fn primeira(s: &amp;str) -&gt; &amp;str</code> não precisa de anotação.</li>
+      <li><code>'static</code> = vive o programa inteiro (literais, dados globais).</li>
+    </ul>
+    <div class="tip">
+      <p>Como iniciante você raramente escreverá lifetimes. Quando precisar, o compilador sugere a anotação exata. Não tente "decorar" — aprenda-os quando um erro real aparecer.</p>
+    </div>
+
+    <h2>Erros clássicos do borrow checker</h2>
+    <table>
+      <tr><th>Código que não compila</th><th>Por quê</th><th>Como resolver</th></tr>
+      <tr>
+        <td><pre>let mut v = vec![1];
+let r = &amp;v[0];
+v.push(2);        // muta…
+println!("{r}");  // …enquanto r vive</pre></td>
+        <td>mutação com referência ativa</td>
+        <td>terminar o uso de <code>r</code> antes de mutar, ou reordenar o código</td>
+      </tr>
+      <tr>
+        <td><pre>let mut x = 5;
+let a = &amp;mut x;
+let b = &amp;mut x;
+println!("{a} {b}");</pre></td>
+        <td>duas referências mutáveis ao mesmo tempo</td>
+        <td>usar cada <code>&amp;mut</code> em escopos separados</td>
+      </tr>
+      <tr>
+        <td><pre>fn dangle() -&gt; &amp;String {
+    let s = String::from("x");
+    &amp;s            // s morre aqui
+}</pre></td>
+        <td>retornar referência a dado local</td>
+        <td>retornar <code>String</code> (o dono), não <code>&amp;String</code></td>
+      </tr>
+    </table>
+
+    <h2>Checklist mental</h2>
+    <ul class="topics">
+      <li>Atribuição de tipo composto <strong>move</strong>; depois do move, a origem é inválida.</li>
+      <li>Para só usar (ler), passe <code>&amp;valor</code>; para alterar, <code>&amp;mut valor</code> e o parâmetro como <code>&amp;mut T</code>.</li>
+      <li>Muitos <code>&amp;</code> <strong>ou</strong> um <code>&amp;mut</code> — nunca os dois juntos.</li>
+      <li>Referência não pode sobreviver ao dono dos dados.</li>
+      <li>Erro de borrow checker não é punição: é o design do seu programa sendo auditado de graça.</li>
+    </ul>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Escreva <code>fn maior(v: &amp;Vec&lt;i32&gt;) -&gt; i32</code> e chame-a mantendo o vetor utilizável depois.</li>
+      <li>Escreva <code>fn dobrar_todos(v: &amp;mut Vec&lt;i32&gt;)</code> que muta o vetor in place.</li>
+      <li>Deixe este código compilar — sem clonar nada: <code>let s = String::from("abc"); let t = s; println!("{s} {t}");</code></li>
+      <li>Faça <code>fn primeira_palavra(s: &amp;str) -&gt; &amp;str</code> (dica: <code>s.split(' ').next()</code> ou <code>find(' ')</code>).</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html">The Book — Understanding Ownership</a> (leia com calma, é o capítulo central)</li>
+      <li><a href="https://doc.rust-lang.org/nomicon/">The Rustonomicon</a> — só depois, se quiser o nível baixo</li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-02-basics.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Fundamentos: variáveis, tipos e funções</span>
+  </a>
+  <a class="next" href="rust-04-types.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Structs, enums, traits e pattern matching</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

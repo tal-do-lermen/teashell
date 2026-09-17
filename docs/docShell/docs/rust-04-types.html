@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 04 — Structs, enums, traits e pattern matching</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 04/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Structs, enums, traits e pattern matching</h1>
+    <p class="lead">Java junta tudo em classes. Rust <strong>desmembra</strong>: dados em <code>struct</code>, variantes em <code>enum</code>, comportamento em <code>trait</code>, e <code>match</code> amarra tudo. Sem herança de implementação.</p>
+
+    <h2>Structs — dados (≈ classes sem herança)</h2>
+<pre><code><span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Usuario</span> {
+    <span class="kw">pub</span> nome: <span class="ty">String</span>,
+    <span class="kw">pub</span> ativo: <span class="ty">bool</span>,
+    <span class="kw">pub</span> email: <span class="ty">String</span>,
+}
+
+<span class="kw">impl</span> <span class="ty">Usuario</span> {
+    <span class="cm">// função associada (≈ static factory) — convenção: `new`</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">new</span>(nome: <span class="ty">String</span>, email: <span class="ty">String</span>) -&gt; <span class="kw">Self</span> {
+        <span class="kw">Self</span> { nome, ativo: <span class="kw">true</span>, email }
+    }
+
+    <span class="cm">// método de leitura (&amp;self = emprestado)</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">email_curto</span>(&amp;<span class="kw">self</span>) -&gt; &amp;<span class="ty">str</span> {
+        <span class="kw">self</span>.email.<span class="fn">split</span>('@').<span class="fn">next</span>().<span class="fn">unwrap_or</span>(<span class="st">""</span>)
+    }
+
+    <span class="cm">// método de mutação (&amp;mut self)</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">desativar</span>(&amp;<span class="kw">mut</span> <span class="kw">self</span>) {
+        <span class="kw">self</span>.ativo = <span class="kw">false</span>;
+    }
+}</code></pre>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="kw">class</span> <span class="ty">Usuario</span> {
+    <span class="kw">private</span> <span class="ty">String</span> nome;
+    <span class="kw">private</span> <span class="ty">boolean</span> ativo;
+
+    <span class="ty">Usuario</span>(<span class="ty">String</span> nome) {
+        <span class="kw">this</span>.nome = nome;
+        <span class="kw">this</span>.ativo = <span class="kw">true</span>;
+    }
+
+    <span class="ty">void</span> <span class="fn">desativar</span>() {
+        <span class="kw">this</span>.ativo = <span class="kw">false</span>;
+    }
+}</code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">struct</span> <span class="ty">Usuario</span> {
+    nome: <span class="ty">String</span>,
+    ativo: <span class="ty">bool</span>,
+}
+
+<span class="kw">impl</span> <span class="ty">Usuario</span> {
+    <span class="kw">fn</span> <span class="fn">new</span>(nome: <span class="ty">String</span>) -&gt; <span class="kw">Self</span> {
+        <span class="kw">Self</span> { nome, ativo: <span class="kw">true</span> }
+    }
+
+    <span class="kw">fn</span> <span class="fn">desativar</span>(&amp;<span class="kw">mut</span> <span class="kw">self</span>) {
+        <span class="kw">self</span>.ativo = <span class="kw">false</span>;
+    }
+}</code></pre>
+      </div>
+    </div>
+    <div class="note">
+      <p>O primeiro parâmetro dos métodos é sempre <code>self</code> explícito: <code>&amp;self</code> (ler), <code>&amp;mut self</code> (mutar), <code>self</code> (consumir). A ownership que você aprendeu no capítulo anterior se aplica a <code>self</code> também.</p>
+    </div>
+    <p>Syntax sugar útil:</p>
+<pre><code><span class="cm">// atualizar baseado no valor antigo (struct update syntax)</span>
+<span class="kw">let</span> admin = <span class="ty">Usuario</span> { nome: <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"root"</span>), ..u1 };
+<span class="cm">// note: u1.email é MOVIDO para admin, o resto é copiado</span></code></pre>
+
+    <h2>Enums — variantes com dados</h2>
+    <p>Enums em Rust são muito mais fortes que os de Java: cada variante pode carregar dados próprios.</p>
+<pre><code><span class="kw">enum</span> <span class="ty">Forma</span> {
+    <span class="ty">Circulo</span>(<span class="ty">f64</span>),                        <span class="cm">// variante com um valor</span>
+    <span class="ty">Retangulo</span> { largura: <span class="ty">f64</span>, altura: <span class="ty">f64</span> },  <span class="cm">// variante com campos</span>
+    <span class="ty">Ponto</span>,                               <span class="cm">// variante sem dados</span>
+}
+
+<span class="kw">enum</span> <span class="ty">Mensagem</span> {
+    <span class="ty">Sair</span>,
+    <span class="ty">Mover</span> { x: <span class="ty">i32</span>, y: <span class="ty">i32</span> },
+    <span class="ty">Escrever</span>(<span class="ty">String</span>),
+    <span class="ty">MudarCor</span>(<span class="ty">u8</span>, <span class="ty">u8</span>, <span class="ty">u8</span>),
+}</code></pre>
+    <div class="note">
+      <p>Em Java moderno isso seria uma <em>sealed interface</em> + records. Em Rust é o elemento central do sistema de tipos: <code>Option&lt;T&gt;</code> e <code>Result&lt;T, E&gt;</code> — que você usará o tempo todo — são enums da biblioteca padrão.</p>
+    </div>
+
+    <h2>match — o switch definitivo</h2>
+<pre><code><span class="kw">fn</span> <span class="fn">area</span>(f: &amp;<span class="ty">Forma</span>) -&gt; <span class="ty">f64</span> {
+    <span class="kw">match</span> f {
+        <span class="ty">Forma</span>::<span class="ty">Circulo</span>(r) =&gt; <span class="nu">3.14159</span> * r * r,
+        <span class="ty">Forma</span>::<span class="ty">Retangulo</span> { largura, altura } =&gt; largura * altura,
+        <span class="ty">Forma</span>::<span class="ty">Ponto</span> =&gt; <span class="nu">0.0</span>,
+    }
+}
+
+<span class="kw">fn</span> <span class="fn">processar</span>(msg: <span class="ty">Mensagem</span>) {
+    <span class="kw">match</span> msg {
+        <span class="ty">Mensagem</span>::<span class="ty">Sair</span> =&gt; <span class="ma">println!</span>(<span class="st">"tchau"</span>),
+        <span class="ty">Mensagem</span>::<span class="ty">Mover</span> { x, y } =&gt; <span class="ma">println!</span>(<span class="st">"mover p/ ({x},{y})"</span>),
+        <span class="ty">Mensagem</span>::<span class="ty">Escrever</span>(txt) <span class="kw">if</span> txt.<span class="fn">len</span>() &gt; <span class="nu">10</span> =&gt; <span class="ma">println!</span>(<span class="st">"texto longo: {txt}"</span>),
+        <span class="ty">Mensagem</span>::<span class="ty">Escrever</span>(txt) =&gt; <span class="ma">println!</span>(<span class="st">"texto: {txt}"</span>),
+        <span class="ty">Mensagem</span>::<span class="ty">MudarCor</span>(r, g, b) =&gt; <span class="ma">println!</span>(<span class="st">"cor rgb({r},{g},{b})"</span>),
+    }
+}</code></pre>
+    <ul>
+      <li><strong>Exaustivo:</strong> o compilador exige cobrir todas as variantes (o curinga <code>_</code> existe, mas evite abuse — troque por <code>outra =&gt;</code> para capturar).</li>
+      <li>Faz <strong>destructuring</strong> e <strong>binding</strong> de dados internos.</li>
+      <li>Aceita <strong>guards</strong> (<code>if</code> depois do padrão).</li>
+      <li>Funciona com números, tuplas, enums, structs, <code>Option</code>, <code>Result</code>.</li>
+    </ul>
+    <p>Atalhos para casos únicos:</p>
+<pre><code><span class="kw">if</span> <span class="kw">let</span> <span class="ty">Mensagem</span>::<span class="ty">Escrever</span>(txt) = msg {
+    <span class="ma">println!</span>(<span class="st">"{txt}"</span>);
+}</code></pre>
+
+    <h2>Traits — comportamento (≈ interfaces)</h2>
+<pre><code><span class="kw">trait</span> <span class="ty">Resumivel</span> {
+    <span class="kw">fn</span> <span class="fn">resumo</span>(&amp;<span class="kw">self</span>) -&gt; <span class="ty">String</span>;      <span class="cm">// obrigatório</span>
+
+    <span class="kw">fn</span> <span class="fn">anuncio</span>(&amp;<span class="kw">self</span>) -&gt; <span class="ty">String</span> {     <span class="cm">// com implementação default</span>
+        <span class="ma">format!</span>(<span class="st">"Confira: {}"</span>, <span class="kw">self</span>.<span class="fn">resumo</span>())
+    }
+}
+
+<span class="kw">struct</span> <span class="ty">Artigo</span> { titulo: <span class="ty">String</span>, autor: <span class="ty">String</span> }
+
+<span class="kw">impl</span> <span class="ty">Resumivel</span> <span class="kw">for</span> <span class="ty">Artigo</span> {
+    <span class="kw">fn</span> <span class="fn">resumo</span>(&amp;<span class="kw">self</span>) -&gt; <span class="ty">String</span> {
+        <span class="ma">format!</span>(<span class="st">"{} por {}"</span>, <span class="kw">self</span>.titulo, <span class="kw">self</span>.autor)
+    }
+}
+
+<span class="kw">struct</span> <span class="ty">Video</span> { titulo: <span class="ty">String</span> }
+
+<span class="kw">impl</span> <span class="ty">Resumivel</span> <span class="kw">for</span> <span class="ty">Video</span> {
+    <span class="kw">fn</span> <span class="fn">resumo</span>(&amp;<span class="kw">self</span>) -&gt; <span class="ty">String</span> {
+        <span class="ma">format!</span>(<span class="st">"Video: {}"</span>, <span class="kw">self</span>.titulo)
+    }
+}</code></pre>
+    <p>Diferenças para interfaces Java: traits podem ter métodos default (ok, igual), podem ser implementadas <strong>para qualquer tipo — até tipos de fora</strong> (como <code>impl Display for MeuTipo</code>), e não há herança de estado.</p>
+    <h3>Trait bounds (generics com contrato)</h3>
+<pre><code><span class="kw">use</span> std::fmt::<span class="ty">Display</span>;
+
+<span class="kw">fn</span> <span class="fn">notificar</span>(item: &amp;<span class="kw">impl</span> <span class="ty">Display</span>) {         <span class="cm">// aceita qualquer tipo Display</span>
+    <span class="ma">println!</span>(<span class="st">"novidade: {item}"</span>);
+}
+
+<span class="cm">// forma longa equivalente (generics):</span>
+<span class="kw">fn</span> notificar2&lt;<span class="ty">T</span>: <span class="ty">Display</span>&gt;(item: &amp;<span class="ty">T</span>) { ... }
+
+<span class="cm">// múltiplos bounds:</span>
+<span class="kw">fn</span> salvar&lt;<span class="ty">T</span>: <span class="ty">Display</span> + <span class="ty">Clone</span>&gt;(item: &amp;<span class="ty">T</span>) { ... }</code></pre>
+    <div class="note">
+      <p>Diferente de Java, não há <em>type erasure</em>: o compilador gera código especializado para cada <code>T</code> (<em>monomorphization</em>) — polimorfismo sem custo, tudo resolvido em compilação. Para polimorfismo em runtime (como uma referência de interface em Java), existe <code>dyn Trait</code> — ver adiante.</p>
+    </div>
+
+    <h2>Derive — o "Lombok" do Rust</h2>
+<pre><code><span class="at">#[derive(Debug, Clone, PartialEq)]</span>
+<span class="kw">struct</span> <span class="ty">Ponto</span> { x: <span class="ty">i32</span>, y: <span class="ty">i32</span> }
+
+<span class="cm">// Debug     -&gt; println!("{:?}", p)        (≈ toString)</span>
+<span class="cm">// Clone     -&gt; p.clone()                  (cópia profunda)</span>
+<span class="cm">// PartialEq -&gt; p == q                     (≈ equals)</span>
+<span class="cm">// Default   -&gt; Ponto::default()</span></code></pre>
+
+    <h2>Sem herança — e agora?</h2>
+    <p>Rust não tem <code>extends</code>. As ferramentas são:</p>
+    <ul class="topics">
+      <li><strong>Composição:</strong> structs contêm structs. Resolve 90% dos casos onde você usaria herança.</li>
+      <li><strong>Traits compartilhados:</strong> comportamento comum via trait + bounds.</li>
+      <li><strong><code>dyn Trait</code> (trait objects):</strong> quando precisa de coleção heterogênea, como <code>List&lt;Interface&gt;</code> em Java:
+<pre><code><span class="kw">let</span> itens: <span class="ty">Vec</span>&lt;<span class="ty">Box</span>&lt;<span class="kw">dyn</span> <span class="ty">Resumivel</span>&gt;&gt; = <span class="ma">vec!</span>[
+    <span class="ty">Box</span>::<span class="fn">new</span>(artigo),
+    <span class="ty">Box</span>::<span class="fn">new</span>(video),
+];
+<span class="kw">for</span> i <span class="kw">in</span> &amp;itens {
+    <span class="ma">println!</span>(<span class="st">"{}"</span>, i.<span class="fn">resumo</span>());   <span class="cm">// dispatch dinâmico, como Java</span>
+}</code></pre></li>
+    </ul>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Crie <code>enum StatusTarefa { Pendente, EmProgresso { percentual: u8 }, Concluida(String) }</code> e uma função que descreve cada estado via <code>match</code>.</li>
+      <li>Trait <code>Area</code> com <code>fn area(&amp;self) -&gt; f64</code>; implemente para <code>Circulo</code> e <code>Retangulo</code>; some as áreas de um <code>Vec&lt;Box&lt;dyn Area&gt;&gt;</code>.</li>
+      <li>Struct <code>Tempo { horas: u8, minutos: u8 }</code> com <code>impl Display</code> (trait da std) para imprimir <code>09:05</code>.</li>
+      <li>Função genérica <code>fn maximo&lt;T: PartialOrd&gt;(v: &amp;[T]) -&gt; Option&lt;&amp;T&gt;</code>.</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch05-00-structs.html">The Book — Structs</a></li>
+      <li><a href="https://doc.rust-lang.org/book/ch06-00-enums.html">The Book — Enums e Pattern Matching</a></li>
+      <li><a href="https://doc.rust-lang.org/book/ch10-00-generics.html">The Book — Generics, Traits e Lifetimes</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-03-ownership.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Ownership, borrowing e lifetimes</span>
+  </a>
+  <a class="next" href="rust-05-errors.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Tratamento de erros: Option, Result e o ?</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

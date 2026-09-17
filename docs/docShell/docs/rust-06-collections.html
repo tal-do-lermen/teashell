@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 06 — Coleções, closures e iterators</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 06/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Coleções, closures e iterators</h1>
+    <p class="lead">Se você usou Streams (Java 8+) ou <code>.map/.filter</code> (JS), iterators de Rust serão naturais — com a diferença de que são <strong>lazy e zero-cost</strong>: o compilador os otimiza até o nível de um loop manual.</p>
+
+    <h2>As coleções essenciais</h2>
+    <table>
+      <tr><th>Rust</th><th>Java</th><th>JS</th></tr>
+      <tr><td><code>Vec&lt;T&gt;</code></td><td><code>ArrayList&lt;T&gt;</code></td><td><code>Array</code></td></tr>
+      <tr><td><code>HashMap&lt;K, V&gt;</code></td><td><code>HashMap&lt;K, V&gt;</code></td><td><code>Map</code></td></tr>
+      <tr><td><code>HashSet&lt;T&gt;</code></td><td><code>HashSet&lt;T&gt;</code></td><td><code>Set</code></td></tr>
+      <tr><td><code>VecDeque&lt;T&gt;</code></td><td><code>ArrayDeque&lt;T&gt;</code></td><td>—</td></tr>
+      <tr><td><code>BTreeMap&lt;K, V&gt;</code></td><td><code>TreeMap&lt;K, V&gt;</code></td><td>—</td></tr>
+    </table>
+<pre><code><span class="kw">let</span> <span class="kw">mut</span> apps = <span class="ty">Vec</span>::<span class="fn">new</span>();
+apps.<span class="fn">push</span>(<span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"launcher"</span>));
+apps.<span class="fn">push</span>(<span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"terminal"</span>));
+<span class="kw">let</span> primeiro = apps[<span class="nu">0</span>].<span class="fn">clone</span>();
+<span class="kw">let</span> talvez = apps.<span class="fn">get</span>(<span class="nu">10</span>);          <span class="cm">// Option&lt;&amp;String&gt; — nunca index out of bounds</span>
+
+<span class="kw">let</span> <span class="kw">mut</span> config: <span class="ty">HashMap</span>&lt;<span class="ty">String</span>, <span class="ty">String</span>&gt; = <span class="ty">HashMap</span>::<span class="fn">new</span>();
+config.<span class="fn">insert</span>(<span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"tema"</span>), <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"escuro"</span>));
+<span class="kw">let</span> tema = config.<span class="fn">get</span>(<span class="st">"tema"</span>);      <span class="cm">// Option&lt;&amp;String&gt;</span></code></pre>
+
+    <h2>A API <code>entry</code> do HashMap</h2>
+    <p>Padrão que aparece o tempo todo (contadores, agrupamentos):</p>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code>contagem.<span class="fn">merge</span>(palavra, <span class="nu">1</span>, <span class="ty">Integer</span>::sum);
+<span class="cm">// ou:</span>
+contagem.<span class="fn">computeIfAbsent</span>(
+    chave, k -&gt; <span class="kw">new</span> <span class="ty">ArrayList</span>&lt;&gt;()
+).<span class="fn">add</span>(valor);</code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code>*contagem.<span class="fn">entry</span>(palavra).<span class="fn">or_insert</span>(<span class="nu">0</span>) += <span class="nu">1</span>;
+<span class="cm">// ou:</span>
+contagem.<span class="fn">entry</span>(chave)
+    .<span class="fn">or_insert_with</span>(<span class="ty">Vec</span>::new)
+    .<span class="fn">push</span>(valor);</code></pre>
+      </div>
+    </div>
+
+    <h2>Closures</h2>
+    <p>Como arrow functions do JS e lambdas de Java — com um detalhe de ownership:</p>
+<pre><code><span class="kw">let</span> dobro = |x: <span class="ty">i32</span>| x * <span class="nu">2</span>;
+<span class="kw">let</span> soma = |a, b| a + b;            <span class="cm">// tipos inferidos</span>
+<span class="kw">let</span> msg = <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"olá"</span>);
+
+<span class="cm">// captura por referência:</span>
+<span class="kw">let</span> greet = || <span class="ma">println!</span>(<span class="st">"{msg}"</span>);
+
+<span class="cm">// captura movendo (necessário p/ threads):</span>
+<span class="kw">let</span> greet2 = <span class="kw">move</span> || <span class="ma">println!</span>(<span class="st">"{msg}"</span>);</code></pre>
+    <p>Três traits por trás (não precisa decorar agora): <code>Fn</code> (só lê o ambiente), <code>FnMut</code> (muta o ambiente), <code>FnOnce</code> (consome valores capturados — só chamável uma vez).</p>
+
+    <h2>Iterator: map / filter / collect</h2>
+    <p>O mesmo pipeline nas três linguagens:</p>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag js">JavaScript</span>
+<pre><code><span class="kw">const</span> nomes = users
+  .<span class="fn">filter</span>(u =&gt; u.ativo)
+  .<span class="fn">map</span>(u =&gt; u.nome.<span class="fn">toUpperCase</span>());
+<span class="cm">// executa na hora (eager)</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">let</span> nomes: <span class="ty">Vec</span>&lt;<span class="ty">String</span>&gt; = users
+  .<span class="fn">iter</span>()
+  .<span class="fn">filter</span>(|u| u.ativo)
+  .<span class="fn">map</span>(|u| u.nome.<span class="fn">to_uppercase</span>())
+  .<span class="fn">collect</span>();
+<span class="cm">// lazy até o .collect()</span></code></pre>
+      </div>
+    </div>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="ty">List</span>&lt;<span class="ty">String</span>&gt; nomes = users.<span class="fn">stream</span>()
+  .<span class="fn">filter</span>(u -&gt; u.<span class="fn">isAtivo</span>())
+  .<span class="fn">map</span>(u -&gt; u.<span class="fn">getNome</span>().<span class="fn">toUpperCase</span>())
+  .<span class="fn">toList</span>();</code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">let</span> nomes: <span class="ty">Vec</span>&lt;<span class="ty">String</span>&gt; = users.<span class="fn">iter</span>()
+  .<span class="fn">filter</span>(|u| u.ativo)
+  .<span class="fn">map</span>(|u| u.nome.<span class="fn">to_uppercase</span>())
+  .<span class="fn">collect</span>();</code></pre>
+      </div>
+    </div>
+    <p>Pontos importantes:</p>
+    <ul class="topics">
+      <li><code>.iter()</code> empresta (<code>&amp;T</code>), <code>.iter_mut()</code> empresta mutável, <code>.into_iter()</code> consome (move) — o ownership se aplica à pipeline.</li>
+      <li>Como Streams de Java, nada acontece sem um consumidor (<code>collect</code>, <code>for</code>, <code>sum</code>, <code>fold</code>, <code>any</code>, <code>count</code>…).</li>
+      <li>O tipo do <code>collect</code> é definido pela variável/assinatura — por isso a anotação <code>: Vec&lt;String&gt;</code>.</li>
+    </ul>
+
+    <h2>collect com Result — pipeline que pode falhar</h2>
+    <p>Padrão elegante que você usará no shell (parsear N valores, abortando no primeiro erro):</p>
+<pre><code><span class="kw">let</span> nums: <span class="ty">Result</span>&lt;<span class="ty">Vec</span>&lt;<span class="ty">i32</span>&gt;, _&gt; =
+    [<span class="st">"1"</span>, <span class="st">"2"</span>, <span class="st">"x"</span>].<span class="fn">iter</span>().<span class="fn">map</span>(|s| s.parse::&lt;<span class="ty">i32</span>&gt;()).<span class="fn">collect</span>();
+
+<span class="kw">match</span> nums {
+    <span class="ty">Ok</span>(v) =&gt; <span class="ma">println!</span>(<span class="st">"{v:?}"</span>),
+    <span class="ty">Err</span>(e) =&gt; <span class="ma">println!</span>(<span class="st">"falhou em: {e}"</span>),
+}</code></pre>
+    <p>O <code>collect</code> encaixa uma pipeline de <code>Result</code> num único <code>Result&lt;Vec&gt;</code> — o primeiro <code>Err</code> vence.</p>
+
+    <h2>Índices: esqueça o <code>for i</code></h2>
+<pre><code><span class="kw">for</span> (i, app) <span class="kw">in</span> apps.<span class="fn">iter</span>().<span class="fn">enumerate</span>() {
+    <span class="ma">println!</span>(<span class="st">"{i}: {app}"</span>);
+}
+
+<span class="kw">for</span> (nome, idade) <span class="kw">in</span> nomes.<span class="fn">iter</span>().<span class="fn">zip</span>(idades.<span class="fn">iter</span>()) { ... }</code></pre>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Conte a frequência de cada palavra num <code>&amp;str</code> usando <code>split_whitespace</code> + <code>entry().or_insert(0)</code>.</li>
+      <li>Dado <code>Vec&lt;Usuario&gt;</code> (com <code>idade: u8</code>), produza <code>Vec&lt;String&gt;</code> com os nomes dos maiores de idade, ordenados (dica: <code>sort_by_key</code>).</li>
+      <li>Some o total de caracteres de todos os nomes com <code>iter().map().sum()</code>.</li>
+      <li>Parseie um <code>Vec&lt;&amp;str&gt;</code> de números para <code>Vec&lt;i32&gt;</code> usando <code>collect::&lt;Result&lt;_,_&gt;&gt;</code>, tratando o erro com <code>?</code> numa função.</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch08-00-common-collections.html">The Book — Common Collections</a></li>
+      <li><a href="https://doc.rust-lang.org/book/ch13-00-functional-features.html">The Book — Closures e Iterators</a></li>
+      <li><a href="https://doc.rust-lang.org/std/iter/trait.Iterator.html">std::iter::Iterator</a> — vale ler a lista de métodos</li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-05-errors.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Option, Result e o operador ?</span>
+  </a>
+  <a class="next" href="rust-07-concurrency.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Concorrência: threads, Arc, Mutex e channels</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

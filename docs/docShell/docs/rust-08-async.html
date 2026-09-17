@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 08 — Async/await e Tokio</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 08/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Async/await e Tokio</h1>
+    <p class="lead">Se você vem do JS, a sintaxe parece familiar — mas o modelo mental é diferente. Se vem do Java, pense em <code>CompletableFuture</code> com sintaxe bonita e um scheduler de verdade.</p>
+
+    <h2>Async não é thread — é estado suspendível</h2>
+    <p><code>async fn</code> não executa nada quando chamada. Ela retorna um <strong>future</strong> — um estado de máquina que só avança quando alguém o <em>awaita</em> (ou o runtime o "polla").</p>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag js">JavaScript</span>
+<pre><code><span class="kw">async</span> <span class="kw">function</span> <span class="fn">carregar</span>() {
+  <span class="kw">const</span> r = <span class="kw">await</span> <span class="fn">fetch</span>(url);
+  <span class="kw">return</span> r.<span class="fn">text</span>();
+}
+<span class="fn">carregar</span>();  <span class="cm">// JÁ começa a executar</span>
+             <span class="cm">// (promises são eager)</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">async</span> <span class="kw">fn</span> <span class="fn">carregar</span>() -&gt; <span class="ty">String</span> {
+    <span class="kw">let</span> r = <span class="fn">fazer_request</span>(url).<span class="kw">await</span>;
+    r.<span class="fn">texto</span>().<span class="kw">await</span>
+}
+<span class="cm">// carregar() NÃO faz nada ainda —</span>
+<span class="cm">// futures são lazy</span>
+<span class="kw">let</span> texto = <span class="fn">carregar</span>().<span class="kw">await</span>;  <span class="cm">// agora sim</span></code></pre>
+      </div>
+    </div>
+    <div class="note">
+      <p>Duas diferenças estruturais do JS: (1) futures são <strong>lazy</strong> — nada acontece até o <code>.await</code>; (2) Rust <strong>não tem runtime embutido</strong> — o event loop é uma biblioteca, e a padrão do ecossistema é o <strong>Tokio</strong>. Em JS o runtime é o navegador/node; em Rust você escolhe e declara.</p>
+    </div>
+
+    <h2>Tokio — o runtime padrão</h2>
+<pre><code><span class="ty">[dependencies]</span>
+<span class="fn">tokio</span> = { <span class="fn">version</span> = <span class="st">"1"</span>, <span class="fn">features</span> = <span class="ty">["full"]</span> }</code></pre>
+<pre><code><span class="at">#[tokio::main]</span>              <span class="cm">// transforma main no runtime async</span>
+<span class="kw">async</span> <span class="kw">fn</span> <span class="fn">main</span>() {
+    tokio::time::<span class="fn">sleep</span>(std::time::<span class="ty">Duration</span>::<span class="fn">from_secs</span>(<span class="nu">1</span>)).<span class="kw">await</span>;
+    <span class="ma">println!</span>(<span class="st">"1 segundo depois"</span>);
+}</code></pre>
+    <div class="warn">
+      <p>O pecado capital do async: <strong>bloquear a thread do runtime</strong>. Nunca use <code>std::thread::sleep</code>, I/O bloqueante pesado ou loops longos dentro de código async — trava as outras tarefas. Para trabalho bloqueante: <code>tokio::task::spawn_blocking(...)</code>. Para dormir: <code>tokio::time::sleep</code>.</p>
+    </div>
+
+    <h2>Concorrência: a tabela de tradução do JS</h2>
+    <table>
+      <tr><th>JavaScript</th><th>Tokio (Rust)</th><th>Observação</th></tr>
+      <tr><td><code>Promise.all([a, b])</code></td><td><code>tokio::join!(a, b)</code></td><td>roda em concorrência, espera ambas</td></tr>
+      <tr><td><code>Promise.race([a, b])</code></td><td><code>tokio::select! { ... }</code></td><td>primeira que termina vence</td></tr>
+      <tr><td>chamar async function</td><td><code>tokio::spawn(futuro)</code></td><td>roda "em background" na multitarefa do runtime</td></tr>
+      <tr><td><code>await</code></td><td><code>.await</code></td><td>suspende a tarefa, não a thread</td></tr>
+    </table>
+<pre><code><span class="kw">use</span> tokio::time::{sleep, <span class="ty">Duration</span>};
+
+<span class="at">#[tokio::main]</span>
+<span class="kw">async</span> <span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="cm">// join!: duas tarefas em paralelo</span>
+    <span class="kw">let</span> (a, b) = tokio::<span class="ma">join!</span>(
+        <span class="kw">async</span> { <span class="fn">sleep</span>(<span class="ty">Duration</span>::<span class="fn">from_millis</span>(<span class="nu">100</span>)).<span class="kw">await</span>; <span class="st">"a"</span> },
+        <span class="kw">async</span> { <span class="fn">sleep</span>(<span class="ty">Duration</span>::<span class="fn">from_millis</span>(<span class="nu">50</span>)).<span class="kw">await</span>; <span class="st">"b"</span> },
+    );
+    <span class="ma">println!</span>(<span class="st">"{a} {b}"</span>);   <span class="cm">// levou ~100ms, não 150</span>
+
+    <span class="cm">// select!: corrida com timeout</span>
+    tokio::<span class="ma">select!</span> {
+        v = <span class="fn">trabalhar</span>() =&gt; <span class="ma">println!</span>(<span class="st">"pronto: {v}"</span>),
+        _ = <span class="fn">sleep</span>(<span class="ty">Duration</span>::<span class="fn">from_secs</span>(<span class="nu">2</span>)) =&gt; <span class="ma">println!</span>(<span class="st">"timeout"</span>),
+    }
+}</code></pre>
+    <p>Diferenças do <code>spawn</code> de threads: <code>tokio::spawn</code> é baratíssimo (milhares de tarefas), mas o future precisa viver o suficiente — na prática, dados enviados pra task usam <code>move</code> e, quando compartilhados, <code>Arc</code> (o mesmo capítulo anterior; async não substitui concorrência, complementa).</p>
+
+    <h2>Canais async</h2>
+    <p>O padrão event bus, agora não-bloqueante (o consumidor <code>.await</code> em vez de travar a thread):</p>
+<pre><code><span class="kw">use</span> tokio::sync::mpsc;
+
+<span class="kw">enum</span> <span class="ty">Evento</span> {
+    <span class="ty">Tick</span>,
+    <span class="ty">Tecla</span>(<span class="ty">String</span>),
+    <span class="ty">Sair</span>,
+}
+
+<span class="at">#[tokio::main]</span>
+<span class="kw">async</span> <span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> (tx, <span class="kw">mut</span> rx) = mpsc::<span class="fn">channel</span>(<span class="nu">64</span>);   <span class="cm">// canal com buffer</span>
+
+    <span class="kw">let</span> produtor = tokio::<span class="fn">spawn</span>(<span class="kw">async</span> <span class="kw">move</span> {
+        <span class="kw">for</span> _ <span class="kw">in</span> <span class="nu">0</span>..<span class="nu">5</span> {
+            tx.<span class="fn">send</span>(<span class="ty">Evento</span>::<span class="ty">Tick</span>).<span class="kw">await</span>.<span class="fn">unwrap</span>();
+        }
+        tx.<span class="fn">send</span>(<span class="ty">Evento</span>::<span class="ty">Sair</span>).<span class="kw">await</span>.<span class="fn">unwrap</span>();
+    });
+
+    <span class="kw">while</span> <span class="kw">let</span> <span class="ty">Some</span>(evento) = rx.<span class="fn">recv</span>().<span class="kw">await</span> {   <span class="cm">// o event loop!</span>
+        <span class="kw">match</span> evento {
+            <span class="ty">Evento</span>::<span class="ty">Tick</span> =&gt; <span class="ma">println!</span>(<span class="st">"tick"</span>),
+            <span class="ty">Evento</span>::<span class="ty">Tecla</span>(k) =&gt; <span class="ma">println!</span>(<span class="st">"tecla: {k}"</span>),
+            <span class="ty">Evento</span>::<span class="ty">Sair</span> =&gt; <span class="kw">break</span>,
+        }
+    }
+    produtor.<span class="kw">await</span>.<span class="fn">unwrap</span>();
+}</code></pre>
+    <div class="note">
+      <p>Este <code>while let Some(ev) = rx.recv().await</code> é, em miniatura, o formato do loop principal do shell: esperar eventos, despachar por tipo, decidir se renderiza. A página de <a href="arquitetura.html">arquitetura</a> expande exatamente este esqueleto.</p>
+    </div>
+
+    <h2>Estado compartilhado async</h2>
+    <ul class="topics">
+      <li><code>Arc&lt;tokio::sync::Mutex&lt;T&gt;&gt;</code> — o Mutex do Tokio pode ser travado <em>através</em> de pontos <code>.await</code> (o de std não; travado sobre await = risco de deadlock com o runtime).</li>
+      <li>Regra prática: <strong>std::sync::Mutex</strong> para seções curtas sem await dentro; <strong>tokio::sync::Mutex</strong> quando precisa segurar o lock além de um <code>.await</code>.</li>
+    </ul>
+
+    <h2>Async no projeto do shell</h2>
+    <ul class="topics">
+      <li><strong>D-Bus</strong> via <code>zbus</code>: API async nativa — signals chegam como streams.</li>
+      <li><strong>IPC</strong> (unix socket): <code>tokio::net::UnixListener</code>.</li>
+      <li><strong>Wayland</strong>: o <code>wayland-client</code> tem seu próprio event queue; há integração async, mas o loop de frames ficará no lado síncrono — híbrido comum em shells reais.</li>
+      <li>Use async onde há I/O de serviços; threads onde há CPU/codec/render. Não seja "async everywhere" por moda.</li>
+    </ul>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Converta um exemplo seu de <code>Promise.all</code> para <code>tokio::join!</code> e cronometre com <code>std::time::Instant</code>.</li>
+      <li>Faça uma "corrida": duas tasks dormem tempos diferentes; <code>select!</code> imprime a vencedora.</li>
+      <li>Implemente timeout: <code>select!</code> entre uma task lenta e <code>sleep(2s)</code>.</li>
+      <li>Adapte o exemplo do event bus: produtor envia <code>Tecla</code> aleatórias e <code>Sair</code> após 5 eventos.</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://tokio.rs/tokio/tutorial">Tokio Tutorial</a> — faça inteiro, é excelente</li>
+      <li><a href="https://doc.rust-lang.org/book/ch17-00-async-await.html">The Book — Async e Await</a></li>
+      <li><a href="https://rust-lang.github.io/async-book/">Async Book</a> — para os detalhes do modelo</li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-07-concurrency.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Concorrência: threads, Arc, Mutex e channels</span>
+  </a>
+  <a class="next" href="rust-09-project.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Módulos, crates, logging e testes</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

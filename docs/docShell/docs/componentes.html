@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Componentes do shell</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 06/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>Componentes do shell</h1>
+    <p class="lead">Launcher, janelas/workspaces, lock screen, idle, wallpaper e multi-monitor: os componentes visuais que dão vida ao shell e como cada um se apoia no protocolo.</p>
+
+    <h2>Launcher</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>Desktop Entry Specification</li>
+      <li><code>.desktop</code> files</li>
+      <li>XDG Base Directory Specification</li>
+      <li><code>/usr/share/applications</code></li>
+      <li><code>~/.local/share/applications</code></li>
+      <li><code>Exec</code></li>
+      <li><code>TryExec</code></li>
+      <li><code>Icon</code></li>
+      <li><code>Categories</code></li>
+      <li><code>NoDisplay</code></li>
+      <li><code>Hidden</code></li>
+      <li><code>Terminal</code></li>
+    </ul>
+    <p>Funcionalidades:</p>
+    <ul class="topics">
+      <li>indexação</li>
+      <li>busca fuzzy</li>
+      <li>favoritos</li>
+      <li>recentes</li>
+      <li>categorias</li>
+      <li>autocomplete</li>
+      <li>execução de aplicativos</li>
+    </ul>
+    <div class="warn">
+      <p>O campo <code>Exec</code> tem regras próprias de escaping e códigos de campo (<code>%f</code>, <code>%u</code>…). Pesquise parsing seguro de argumentos — não use <code>sh -c</code> com a string crua.</p>
+    </div>
+
+    <h2>Workspaces e janelas</h2>
+    <p>Pesquise os protocolos:</p>
+    <ul class="topics">
+      <li><code>wlr-foreign-toplevel-management</code> — listar/controlar janelas (Sway, Hyprland)</li>
+      <li><code>ext-workspace-v1</code> — workspaces como protocolo padrão</li>
+      <li><code>ext-foreign-toplevel-list-v1</code> — listar janelas (protocolo padrão)</li>
+    </ul>
+    <p>Entenda:</p>
+    <ul class="topics">
+      <li>listar janelas</li>
+      <li>detectar janela ativa</li>
+      <li>minimizar/maximizar quando suportado</li>
+      <li>fechar</li>
+      <li>focar</li>
+      <li>workspace atual</li>
+      <li>mover janela</li>
+      <li>acompanhar eventos</li>
+    </ul>
+    <p>Também pesquise APIs específicas de:</p>
+    <ul class="topics">
+      <li>Sway IPC</li>
+      <li>Hyprland IPC</li>
+      <li>Niri IPC</li>
+    </ul>
+    <div class="tip">
+      <p>Mantenha uma camada de abstração (trait <code>ToplevelWatcher</code>) para que o shell não fique preso a um único compositor: a implementação via protocolos padrão cobre a maioria; a via IPC específica cobre extras.</p>
+    </div>
+
+    <h2>Lock Screen</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li><code>ext-session-lock-v1</code></li>
+      <li>Session lock</li>
+      <li>Lock surface</li>
+      <li>Keyboard exclusive access</li>
+      <li>Unlock flow</li>
+      <li>PAM</li>
+      <li>Linux-PAM</li>
+      <li>autenticação em Rust</li>
+    </ul>
+    <div class="warn">
+      <p><strong>Session lock não deve ser tratado simplesmente como uma janela layer-shell comum.</strong> O protocolo garante que a tela está travada antes do compositor ocultar o conteúdo — diferente de um overlay simples.</p>
+    </div>
+    <p>Estude também:</p>
+    <ul class="topics">
+      <li>race conditions</li>
+      <li>secure input</li>
+      <li>foco exclusivo</li>
+      <li>encerramento seguro</li>
+      <li>tratamento de erros de autenticação</li>
+    </ul>
+
+    <h2>Idle Detection</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li><code>ext-idle-notify-v1</code></li>
+      <li><code>org_kde_kwin_idle</code> (legado)</li>
+      <li>Idle timeout</li>
+      <li>Idle inhibitor</li>
+      <li>Screen lock</li>
+      <li>DPMS</li>
+    </ul>
+    <p>Exemplo conceitual:</p>
+<pre class="diagram"><code>sem interação
+      ↓
+idle timeout
+      ↓
+ação
+      ↓
+lock / display power</code></pre>
+
+    <h2>Wallpaper</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>Layer-shell background</li>
+      <li><code>wl_output</code></li>
+      <li>Multi-monitor</li>
+      <li>Image decoding</li>
+      <li>Texture upload</li>
+      <li>GPU textures</li>
+      <li>DMA-BUF</li>
+      <li>Scaling</li>
+      <li>Fractional scaling</li>
+      <li>Aspect ratio</li>
+      <li>Crop / Fit / Fill</li>
+    </ul>
+    <p>Rust: crate <a href="https://docs.rs/image"><code>image</code></a>.</p>
+    <p>Planeje desde o início:</p>
+    <ul class="topics">
+      <li>múltiplos monitores</li>
+      <li>wallpapers diferentes</li>
+      <li>mudança dinâmica</li>
+      <li>cache</li>
+      <li>baixo uso de memória</li>
+      <li>atualização sem travar a UI</li>
+    </ul>
+
+    <h2>Multi-monitor</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li><code>wl_output</code></li>
+      <li>Output lifecycle</li>
+      <li>Output scale</li>
+      <li>Logical coordinates</li>
+      <li>Physical dimensions</li>
+      <li>Refresh rate</li>
+      <li>Fractional scaling</li>
+      <li>Output enter/leave</li>
+    </ul>
+    <p>O shell deve possuir um estado por monitor:</p>
+<pre class="diagram"><code>Output
+ ├── Bar
+ ├── Wallpaper
+ ├── Widgets
+ └── UI state</code></pre>
+
+    <h2>Exemplo 8 — listar janelas (foreign toplevel)</h2>
+    <p>Para a lista de janelas/workspaces na barra: o manager entrega um <em>handle</em> por janela, e a janela é um fluxo de eventos.</p>
+<pre><code><span class="cm">// Cargo.toml: wayland-protocols-wlr = { version = "0.3", features = ["client"] }</span>
+<span class="kw">use</span> wayland_protocols_wlr::foreign_toplevel::v1::client::{
+    zwlr_foreign_toplevel_handle_v1::<span class="ty">ZwlrForeignToplevelHandleV1</span>,
+    zwlr_foreign_toplevel_manager_v1::<span class="ty">ZwlrForeignToplevelManagerV1</span>,
+};
+
+<span class="cm">// registry: bind "zwlr_foreign_toplevel_manager_v1" (confira com `wayland-info`)</span>
+
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;<span class="ty">ZwlrForeignToplevelManagerV1</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, _mgr: &amp;<span class="ty">ZwlrForeignToplevelManagerV1</span>,
+             event: zwlr_foreign_toplevel_manager_v1::<span class="ty">Event</span>,
+             _: &amp;(), _: &amp;<span class="ty">Connection</span>, _: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">match</span> event {
+            <span class="cm">// nova janela: o manager entrega um handle</span>
+            <span class="ty">ZwlrForeignToplevelManagerV1</span>::<span class="ty">Event</span>::<span class="ty">Toplevel</span> { toplevel } =&gt; {
+                state.janelas.<span class="fn">insert</span>(toplevel.<span class="fn">clone</span>(), <span class="ty">Janela</span>::<span class="fn">default</span>());
+            }
+            <span class="ty">ZwlrForeignToplevelManagerV1</span>::<span class="ty">Event</span>::<span class="ty">Finished</span> =&gt; state.running = <span class="kw">false</span>,
+            _ =&gt; {}
+        }
+    }
+}
+
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;<span class="ty">ZwlrForeignToplevelHandleV1</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, handle: &amp;<span class="ty">ZwlrForeignToplevelHandleV1</span>,
+             event: zwlr_foreign_toplevel_handle_v1::<span class="ty">Event</span>,
+             _: &amp;(), _: &amp;<span class="ty">Connection</span>, _: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">match</span> event {
+            <span class="cm">// título e app chegam como eventos separados:</span>
+            <span class="ty">ZwlrForeignToplevelHandleV1</span>::<span class="ty">Event</span>::<span class="ty">Title</span> { title } =&gt; { <span class="cm">/* ... */</span> }
+            <span class="ty">ZwlrForeignToplevelHandleV1</span>::<span class="ty">Event</span>::<span class="ty">AppId</span> { app_id } =&gt; { <span class="cm">/* ... */</span> }
+            <span class="ty">ZwlrForeignToplevelHandleV1</span>::<span class="ty">Event</span>::<span class="ty">State</span> { state: bits } =&gt; {
+                <span class="cm">// bits: 0=maximizada, 1=ativa, 2=fullscreen... (spec)</span>
+            }
+            <span class="ty">ZwlrForeignToplevelHandleV1</span>::<span class="ty">Event</span>::<span class="ty">Closed</span> =&gt; {
+                state.janelas.<span class="fn">remove</span>(&amp;handle);
+            }
+            _ =&gt; {}
+        }
+    }
+}
+<span class="cm">// ações (requests): handle.activate(&amp;seat, &amp;surface), close(),</span>
+<span class="cm">// set_minimized(), set_maximized() — quando o compositor suportar</span></code></pre>
+    <div class="refs">
+      <ul>
+        <li><a href="https://wayland.app/protocols/wlr-foreign-toplevel-management-unstable-v1">spec do wlr-foreign-toplevel-management</a> — a lista de estados e requests</li>
+        <li>Verifique suporte: <code>wayland-info</code> | Sway/Hyprland também expõem IPC próprio — veja <a href="roadmap.html">recursos</a></li>
+      </ul>
+    </div>
+
+    <h2>Exemplo 9 — lock screen (session lock)</h2>
+<pre><code><span class="cm">// registry: bind "ext_session_lock_manager_v1" (wayland-protocols, feature "client")</span>
+<span class="kw">use</span> wayland_protocols::ext::session_lock::v1::client::{
+    ext_session_lock_manager_v1::<span class="ty">ExtSessionLockManagerV1</span>,
+    ext_session_lock_v1::{<span class="kw">self</span>, <span class="ty">ExtSessionLockV1</span>},
+};
+
+<span class="kw">let</span> manager: <span class="ty">ExtSessionLockManagerV1</span> = <span class="cm">/* bind do registry */</span>;
+<span class="kw">let</span> lock = manager.<span class="fn">lock</span>(qh, ());                       <span class="cm">// pede o lock AGORA</span>
+<span class="kw">let</span> _lock_surface = lock.<span class="fn">get_lock_surface</span>(&amp;surface, &amp;output, qh, ());
+
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;<span class="ty">ExtSessionLockV1</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, _lock: &amp;<span class="ty">ExtSessionLockV1</span>,
+             event: ext_session_lock_v1::<span class="ty">Event</span>,
+             _: &amp;(), _: &amp;<span class="ty">Connection</span>, _: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">match</span> event {
+            <span class="cm">// compositor CONFIRMOU o lock — só AGORA a UI de senha aparece</span>
+            ext_session_lock_v1::<span class="ty">Event</span>::<span class="ty">Locked</span> =&gt; state.ui_pronta = <span class="kw">true</span>,
+            <span class="cm">// outro lock venceu / crash — destrua tudo e saia</span>
+            ext_session_lock_v1::<span class="ty">Event</span>::<span class="ty">Finished</span> =&gt; state.running = <span class="kw">false</span>,
+            _ =&gt; {}
+        }
+    }
+}
+<span class="cm">// PAM valida a senha (crate `pam` + crate `rpassword` p/ prompt) — ao sucesso:</span>
+<span class="cm">// lock.unlock_and_destroy();</span></code></pre>
+    <p>O par <code>Locked</code>/<code>Finished</code> é a resposta do protocolo às race conditions listadas acima: o compositor só oculta o conteúdo depois de confirmar o lock, e um cliente que perde o lock é notificado para se encerrar.</p>
+
+    <h2>Exemplo 10 — idle detection</h2>
+<pre><code><span class="cm">// registry: bind "ext_idle_notify_v1"</span>
+<span class="kw">use</span> wayland_protocols::ext::idle_notify::v1::client::ext_idle_notify_v1::{
+    <span class="ty">ExtIdleNotificationV1</span>, <span class="ty">ExtIdleNotifyManagerV1</span>,
+};
+
+<span class="cm">// 5 minutos em milissegundos, para o seat atual:</span>
+<span class="kw">let</span> notificacao: <span class="ty">ExtIdleNotificationV1</span> =
+    manager.<span class="fn">get_idle_notification</span>(<span class="nu">5</span> * <span class="nu">60</span> * <span class="nu">1000</span>, &amp;seat, qh, ());
+
+<span class="cm">// eventos desta interface:</span>
+<span class="cm">//   Idle    -&gt; sem interação pelo timeout: envie Evento::Idle no bus</span>
+<span class="cm">//              (módulos decidem: lock screen + DPMS)</span>
+<span class="cm">//   Resumed -&gt; usuário voltou a interagir</span></code></pre>
+    <div class="tip">
+      <p>Aplicativos pedem para <em>prevenir</em> o idle (vídeo tocando, download…) com o protocolo <code>zwp_idle_inhibit_manager_v1</code>. Seu shell deve respeitar o inhibitor antes de disparar lock/DPMS — pesquise "idle inhibit" na spec do wayland-protocols.</p>
+    </div>
+
+    <h2>Exemplo 11 — launcher: parsear .desktop files</h2>
+    <p>Um parser mínimo de Desktop Entry (para aprender; em produção use o crate <code>freedesktop-desktop-entry</code>):</p>
+<pre><code><span class="kw">use</span> std::fs;
+
+<span class="at">#[derive(Debug, Default)]</span>
+<span class="kw">struct</span> <span class="ty">DesktopEntry</span> {
+    nome: <span class="ty">String</span>,
+    exec: <span class="ty">String</span>,
+    icone: <span class="ty">String</span>,
+    terminal: <span class="ty">bool</span>,
+    oculto: <span class="ty">bool</span>,
+}
+
+<span class="kw">fn</span> <span class="fn">parse_entry</span>(texto: &amp;<span class="ty">str</span>) -&gt; <span class="ty">Option</span>&lt;<span class="ty">DesktopEntry</span>&gt; {
+    <span class="kw">let</span> <span class="kw">mut</span> entry = <span class="ty">DesktopEntry</span>::<span class="fn">default</span>();
+    <span class="kw">let</span> <span class="kw">mut</span> secao_correta = <span class="kw">false</span>;
+
+    <span class="kw">for</span> linha <span class="kw">in</span> texto.<span class="fn">lines</span>() {
+        <span class="kw">let</span> linha = linha.<span class="fn">trim</span>();
+        <span class="kw">if</span> linha.<span class="fn">starts_with</span>('[') {
+            secao_correta = linha == <span class="st">"[Desktop Entry]"</span>;
+        } <span class="kw">else</span> <span class="kw">if</span> secao_correta {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="ty">Some</span>((chave, valor)) = linha.<span class="fn">split_once</span>('=') {
+                <span class="kw">match</span> chave.<span class="fn">trim</span>() {
+                    <span class="st">"Name"</span> =&gt; entry.nome = valor.<span class="fn">to_string</span>(),
+                    <span class="st">"Exec"</span> =&gt; entry.exec = valor.<span class="fn">to_string</span>(),
+                    <span class="st">"Icon"</span> =&gt; entry.icone = valor.<span class="fn">to_string</span>(),
+                    <span class="st">"Terminal"</span> =&gt; entry.terminal = valor == <span class="st">"true"</span>,
+                    <span class="st">"Hidden"</span> | <span class="st">"NoDisplay"</span> =&gt; entry.oculto |= valor == <span class="st">"true"</span>,
+                    _ =&gt; {}
+                }
+            }
+        }
+    }
+    (!entry.nome.<span class="fn">is_empty</span>() &amp;&amp; !entry.exec.<span class="fn">is_empty</span>() &amp;&amp; !entry.oculto)
+        .<span class="fn">then_some</span>(entry)
+}
+
+<span class="cm">// onde procurar, segundo o XDG Base Directory spec:</span>
+<span class="kw">fn</span> <span class="fn">diretorios_de_apps</span>() -&gt; <span class="ty">Vec</span>&lt;std::path::<span class="ty">PathBuf</span>&gt; {
+    <span class="kw">let</span> home = std::env::<span class="fn">var</span>(<span class="st">"XDG_DATA_HOME"</span>).<span class="fn">unwrap_or_else</span>(|_|
+        <span class="ma">format!</span>(<span class="st">"{}/.local/share"</span>, std::env::<span class="fn">var</span>(<span class="st">"HOME"</span>).<span class="fn">unwrap_or_default</span>()));
+    <span class="kw">let</span> sistema = std::env::<span class="fn">var</span>(<span class="st">"XDG_DATA_DIRS"</span>)
+        .<span class="fn">unwrap_or_else</span>(|_| <span class="st">"/usr/local/share:/usr/share"</span>.<span class="fn">into</span>());
+
+    std::iter::<span class="fn">once</span>(home)
+        .<span class="fn">chain</span>(sistema.<span class="fn">split</span>(':').<span class="fn">map</span>(<span class="ty">String</span>::from))
+        .<span class="fn">map</span>(|d| std::path::<span class="ty">PathBuf</span>::<span class="fn">from</span>(d).<span class="fn">join</span>(<span class="st">"applications"</span>))
+        .<span class="fn">collect</span>()
+}</code></pre>
+    <ul class="topics">
+      <li>Exercício imediato: rode este código contra os <code>.desktop</code> reais do seu sistema (<code>ls ~/.local/share/applications</code>).</li>
+      <li>Faltam os casos que a spec exige: nomes localizados (<code>Name[pt_BR]=</code>), códigos de campo no <code>Exec</code> (<code>%f</code>, <code>%u</code>) e parsing seguro dos argumentos — por isso o crate pronto vale o estudo.</li>
+      <li>Executar: <code>std::process::Command</code> com o binário do <code>Exec</code> — <strong>nunca</strong> via <code>sh -c</code> com a string crua.</li>
+    </ul>
+    <div class="refs">
+      <ul>
+        <li><a href="https://specifications.freedesktop.org/desktop-entry-spec/latest/">Desktop Entry Spec</a> — tabela de chaves e o formato do <code>Exec</code></li>
+        <li><a href="https://specifications.freedesktop.org/basedir-spec/latest/">XDG Base Directory Spec</a> — de onde vêm os diretórios</li>
+        <li><a href="https://docs.rs/freedesktop-desktop-entry">crate freedesktop-desktop-entry</a> — parser completo e mantido</li>
+        <li>Busca fuzzy: crate <code>fuzzy-matcher</code> ou <code>nucleo</code> (o motor do helix)</li>
+      </ul>
+    </div>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://specifications.freedesktop.org/desktop-entry-spec/latest/">Desktop Entry Spec</a></li>
+      <li><a href="https://specifications.freedesktop.org/basedir-spec/latest/">XDG Base Directory Spec</a></li>
+      <li><a href="https://wayland.app/protocols/wlr-foreign-toplevel-management-unstable-v1">wlr-foreign-toplevel-management</a></li>
+      <li><a href="https://wayland.app/protocols/ext-session-lock-v1">ext-session-lock-v1</a></li>
+      <li><a href="https://wayland.app/protocols/ext-idle-notify-v1">ext-idle-notify-v1</a></li>
+      <li><a href="https://wayland.app/protocols/ext-workspace-v1">ext-workspace-v1</a> · <a href="https://wayland.app/protocols/ext-foreign-toplevel-list-v1">ext-foreign-toplevel-list-v1</a></li>
+      <li><a href="https://docs.rs/image">crate image</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="servicos-dbus.html">
+    <span class="dir">← anterior</span>
+    <span class="title">D-Bus e serviços do sistema</span>
+  </a>
+  <a class="next" href="infra.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Configuração, IPC e performance</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

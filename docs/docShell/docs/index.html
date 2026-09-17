@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desktop Shell Wayland em Rust — Guia de aprendizado</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">guia de estudo · início</span>
+</header>
+
+<main>
+  <article>
+    <h1>Desktop Shell Wayland em Rust</h1>
+    <p class="lead">Um guia de aprendizado para quem já programa em <strong>Java</strong> ou <strong>JavaScript</strong> e quer aprender <strong>Rust do zero</strong> construindo um projeto real: um desktop shell para Wayland.</p>
+
+    <h2>O projeto</h2>
+    <p>Construir um <strong>desktop shell modular</strong> — barra, launcher, notificações, lock screen, dock, wallpaper, control center, widgets, configuração e IPC — executando sobre um compositor Wayland existente como <strong>Sway</strong>, <strong>Hyprland</strong> ou <strong>Niri</strong>.</p>
+    <div class="note">
+      <p>O shell é um <strong>cliente Wayland</strong>, não um compositor. Isso reduz drasticamente o escopo: você não vai lidar com DRM/KMS, drivers de GPU ou gerenciamento de janelas em baixo nível. O foco é aprender Rust resolvendo problemas reais de sistema.</p>
+    </div>
+
+    <h2>Como usar este guia</h2>
+    <ol>
+      <li><strong>Parte 1 — Rust do zero (páginas 01–09):</strong> fundamentos da linguagem com comparações diretas a Java e JS. Estude nesta ordem, com o editor aberto, digitando e executando cada exemplo.</li>
+      <li><strong>Parte 2 — O roadmap do shell (páginas 10–17):</strong> o que pesquisar e em qual ordem para construir o shell. Cada página contém <strong>exemplos de código comentados</strong> e caixas <em>"Onde buscar as infos"</em> com a fonte oficial de cada tema. A página final (<a href="roadmap.html">Roadmap de implementação</a>) organiza tudo em 14 fases.</li>
+      <li>Volte às páginas da Parte 2 como referência conforme avança nas fases. Não tente ler tudo antes de escrever código.</li>
+    </ol>
+    <div class="tip">
+      <p>Regra de ouro para quem já sabe programar: <strong>escreva código desde o dia 1</strong>. Use <a href="https://github.com/rust-lang/rustlings">Rustlings</a> em paralelo com as páginas da Parte 1. A linguagem cobra prática — o borrow checker não se aprende só lendo.</p>
+    </div>
+
+    <h2>Mapa do guia</h2>
+
+    <div class="toc-section">
+      <h2>Parte 1 — Rust do zero</h2>
+      <ol>
+        <li><a href="rust-01-setup.html">Configuração do ambiente e Cargo</a><br><span class="toc-meta">rustup, cargo vs npm/Maven, hello world, editor</span></li>
+        <li><a href="rust-02-basics.html">Fundamentos: variáveis, tipos e funções</a><br><span class="toc-meta">imutabilidade, tipos primitivos, &amp;str vs String, expressões</span></li>
+        <li><a href="rust-03-ownership.html">Ownership, borrowing e lifetimes</a><br><span class="toc-meta">o capítulo mais importante — memória sem garbage collector</span></li>
+        <li><a href="rust-04-types.html">Structs, enums, traits e pattern matching</a><br><span class="toc-meta">o "OOP de Rust": dados, comportamento e polimorfismo</span></li>
+        <li><a href="rust-05-errors.html">Tratamento de erros: Option, Result e o operador ?</a><br><span class="toc-meta">erros como valores, thiserror e anyhow</span></li>
+        <li><a href="rust-06-collections.html">Coleções, closures e iterators</a><br><span class="toc-meta">Vec, HashMap, iteradores vs Streams/Array methods</span></li>
+        <li><a href="rust-07-concurrency.html">Concorrência: threads, Arc, Mutex e channels</a><br><span class="toc-meta">data races eliminadas em tempo de compilação</span></li>
+        <li><a href="rust-08-async.html">Async/await e Tokio</a><br><span class="toc-meta">futures lazy, runtime Tokio, join!/select! vs Promise.all</span></li>
+        <li><a href="rust-09-project.html">Módulos, crates, logging e testes</a><br><span class="toc-meta">organização de projetos, tracing, cargo test</span></li>
+      </ol>
+    </div>
+
+    <div class="toc-section">
+      <h2>Parte 2 — Roadmap do shell</h2>
+      <ol start="10">
+        <li><a href="wayland.html">Wayland: fundamentos e Rust</a><br><span class="toc-meta">protocolo, globals, surfaces, event queue, wayland-client</span></li>
+        <li><a href="layer-shell.html">Layer Shell</a><br><span class="toc-meta">como a barra ocupa o topo da tela — o coração do shell</span></li>
+        <li><a href="rendering-ui.html">Rendering, UI Toolkit e Input</a><br><span class="toc-meta">wgpu, iced/slint/egui, pointer e keyboard</span></li>
+        <li><a href="arquitetura.html">Arquitetura interna</a><br><span class="toc-meta">event loop, message bus, módulos, estrutura do projeto</span></li>
+        <li><a href="servicos-dbus.html">D-Bus e serviços do sistema</a><br><span class="toc-meta">notificações, áudio (PipeWire), rede, bluetooth, energia, brilho</span></li>
+        <li><a href="componentes.html">Componentes do shell</a><br><span class="toc-meta">launcher, janelas/workspaces, lock screen, idle, wallpaper, multi-monitor</span></li>
+        <li><a href="infra.html">Configuração, IPC e performance</a><br><span class="toc-meta">TOML + hot reload, unix socket, profiling</span></li>
+        <li><a href="roadmap.html">Roadmap de implementação</a><br><span class="toc-meta">14 fases, o que NÃO estudar primeiro, recursos oficiais</span></li>
+      </ol>
+    </div>
+
+    <h2>Pré-requisitos</h2>
+    <ul>
+      <li>Conhecimento sólido de pelo menos uma linguagem (Java, JS) — orientação a objetos, coleções, concorrência básica.</li>
+      <li>Linux instalado (recomenda-se testar num ambiente com Sway/Hyprland/Niri, ou até uma VM) — o alvo final é Wayland.</li>
+      <li>Não é preciso saber Rust. Nada de C/C++ é assumido.</li>
+    </ul>
+
+    <h2>Conceito geral da arquitetura</h2>
+    <p>É assim que tudo se conecta no final. Cada camada é estudada individualmente antes de ser conectada às outras:</p>
+<pre class="diagram"><code>                   WAYLAND COMPOSITOR
+                 Sway / Hyprland / Niri
+                          │
+                          │ Wayland
+                          ▼
+                 ┌──────────────────┐
+                 │   Desktop Shell  │
+                 │                  │
+                 │ ┌──────────────┐ │
+                 │ │ Event Loop   │ │
+                 │ └──────┬───────┘ │
+                 │        │         │
+                 │ ┌──────▼───────┐ │
+                 │ │ Application  │ │
+                 │ │    State     │ │
+                 │ └──────┬───────┘ │
+                 │        │         │
+                 │ ┌──────▼────────┐│
+                 │ │ UI / Modules  ││
+                 │ │               ││
+                 │ │ Bar           ││
+                 │ │ Launcher      ││
+                 │ │ Dock          ││
+                 │ │ Notifications ││
+                 │ │ Control Center││
+                 │ │ Lock Screen   ││
+                 │ │ Wallpaper     ││
+                 │ └───────────────┘│
+                 └──────────────────┘
+                     │           │
+                  Wayland       D-Bus
+                     │           │
+                     │     ┌─────┴──────────┐
+                     │     │                │
+                     │  PipeWire      NetworkManager
+                     │  BlueZ         UPower
+                     │  etc.          etc.
+                     │
+                     ▼
+                   GPU</code></pre>
+
+    <h2>Resultado esperado</h2>
+    <p>Ao terminar a pesquisa, você deve conseguir explicar <strong>sem consultar código</strong>:</p>
+    <ol>
+      <li>Como um cliente Wayland se conecta ao compositor.</li>
+      <li>Como descobre globals.</li>
+      <li>Como cria uma surface.</li>
+      <li>Como transforma uma surface em layer-shell.</li>
+      <li>Como recebe input.</li>
+      <li>Como renderiza.</li>
+      <li>Como sincroniza frames.</li>
+      <li>Como detecta mudanças de estado.</li>
+      <li>Como conversa com D-Bus.</li>
+      <li>Como controla áudio/rede/Bluetooth/energia.</li>
+      <li>Como encontra aplicações <code>.desktop</code>.</li>
+      <li>Como acompanha janelas/workspaces.</li>
+      <li>Como implementa lock screen.</li>
+      <li>Como monitora idle.</li>
+      <li>Como gerencia múltiplos monitores.</li>
+      <li>Como mantém configuração.</li>
+      <li>Como cria IPC.</li>
+      <li>Como mede e otimiza performance.</li>
+    </ol>
+    <p class="muted">Só depois disso vale começar a montar a implementação completa.</p>
+
+    <div class="warn">
+      <p><strong>O que NÃO estudar primeiro:</strong> Smithay internals, DRM/KMS, implementação de compositor, XWayland, wlroots internals, desenvolvimento de drivers de GPU. São temas centrais para <em>construir um compositor</em> — não para o primeiro estágio de um shell. Detalhes na página do <a href="roadmap.html">roadmap</a>.</p>
+    </div>
+  </article>
+</main>
+
+<nav class="pager">
+  <span class="spacer"></span>
+  <a class="next" href="rust-01-setup.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Configuração do ambiente e Cargo</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

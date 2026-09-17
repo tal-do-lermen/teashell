@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 09 — Módulos, crates, logging e testes</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 09/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Módulos, crates, logging e testes</h1>
+    <p class="lead">A última página da Parte 1 organiza tudo o que você aprendeu num projeto de verdade — o formato que o shell vai usar.</p>
+
+    <h2>Módulos e visibilidade</h2>
+    <p>Diferente de Java (pacotes = pastas, mágicos), em Rust a árvore de módulos é <strong>declarada no código</strong>:</p>
+<pre><code><span class="cm">// src/main.rs</span>
+<span class="kw">mod</span> config;          <span class="cm">// declara o módulo (carrega src/config.rs)</span>
+<span class="kw">mod</span> ui;              <span class="cm">// carrega src/ui/mod.rs ou src/ui.rs</span>
+
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> c = config::<span class="fn">carregar</span>();      <span class="cm">// caminho completo</span>
+    ui::bar::<span class="fn">render</span>(&amp;c);             <span class="cm">// submódulo</span>
+}
+
+<span class="cm">// src/config.rs</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">carregar</span>() -&gt; <span class="ty">String</span> {        <span class="cm">// `pub` = visível fora do módulo</span>
+    <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"tema=escuro"</span>)
+}
+
+<span class="cm">// src/ui/mod.rs</span>
+<span class="kw">pub</span> <span class="kw">mod</span> bar;          <span class="cm">// src/ui/bar.rs</span></code></pre>
+    <table>
+      <tr><th>Rust</th><th>Java/JS</th></tr>
+      <tr><td><code>mod x;</code></td><td>estrutura de pastas decide (Java) / <code>import</code> (JS)</td></tr>
+      <tr><td><code>pub</code></td><td><code>public</code></td></tr>
+      <tr><td>sem marcador (padrão)</td><td><code>private</code> — visível só no módulo e filhos</td></tr>
+      <tr><td><code>pub(crate)</code></td><td><code>protected/package-private</code> — visível só no crate</td></tr>
+      <tr><td><code>use crate::config::carregar;</code></td><td><code>import</code></td></tr>
+    </table>
+    <p>Paths especiais: <code>crate::</code> (raiz do binário/biblioteca, como um <code>import comigo.*</code>), <code>super::</code> (módulo pai, como <code>../</code>).</p>
+
+    <h2>main.rs + lib.rs — a forma idiomática</h2>
+<pre><code>src/
+├── main.rs        # binário: só bootstrap (parse args, init, run)
+├── lib.rs         # a "biblioteca" do próprio projeto
+├── config.rs
+├── state.rs
+└── ui/
+    ├── mod.rs
+    ├── bar.rs
+    └── launcher.rs</code></pre>
+<pre><code><span class="cm">// main.rs</span>
+<span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">if</span> <span class="kw">let</span> <span class="ty">Err</span>(e) = shell::<span class="fn">run</span>() {
+        <span class="ma">eprintln!</span>(<span class="st">"erro fatal: {e:?}"</span>);
+        std::process::<span class="fn">exit</span>(<span class="nu">1</span>);
+    }
+}
+
+<span class="cm">// lib.rs</span>
+<span class="kw">pub</span> <span class="kw">mod</span> config;
+<span class="kw">pub</span> <span class="kw">mod</span> state;
+<span class="kw">pub</span> <span class="kw">mod</span> ui;
+
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">run</span>() -&gt; anyhow::<span class="ty">Result</span>&lt;()&gt; {
+    <span class="cm">// montar tudo aqui — testável, pois é biblioteca</span>
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <div class="tip">
+      <p>Colocar a lógica em <code>lib.rs</code> permite <code>cargo test</code> cobrir tudo, e o binário fica um casca fina. É o padrão de projetos sérios — e o que o shell vai seguir.</p>
+    </div>
+
+    <h2>Crates e workspaces</h2>
+    <ul class="topics">
+      <li><strong>Crate</strong> = unidade de compilação (um binário ou uma biblioteca) publicável no crates.io (≈ pacote npm / artefato Maven).</li>
+      <li><strong>Package</strong> = um <code>Cargo.toml</code> com 1+ crates.</li>
+      <li><strong>Workspace</strong> = vários packages num repositório, compartilhando <code>target/</code> e <code>Cargo.lock</code> (≈ npm workspaces / multi-module Maven).
+<pre><code>shell/
+├── Cargo.toml            # [workspace] members = [...]
+├── crates/
+│   ├── shell-core/       # estado + event bus
+│   ├── shell-wayland/    # integração wayland
+│   ├── shell-dbus/       # notificações, áudio, rede...
+│   └── shell-ui/         # componentes visuais
+└── shell/                # binário final</code></pre></li>
+    </ul>
+    <p>O roadmap do shell vai caminhar para exatamente esta divisão — cada módulo independente, compilando em paralelo, com fronteiras claras.</p>
+
+    <h2>Logging com tracing</h2>
+    <p>O ecossistema usa a facade <code>log</code> (≈ slf4j) ou <strong>tracing</strong>, que adiciona <em>spans</em> (contexto estruturado e duração) — ideal para apps de longa duração como o shell:</p>
+<pre><code><span class="ty">[dependencies]</span>
+<span class="fn">tracing</span> = <span class="st">"0.1"</span>
+<span class="fn">tracing-subscriber</span> = { <span class="fn">version</span> = <span class="st">"0.3"</span>, <span class="fn">features</span> = <span class="ty">["env-filter"]</span> }</code></pre>
+<pre><code><span class="kw">fn</span> <span class="fn">main</span>() {
+    tracing_subscriber::<span class="fn">fmt</span>()
+        .<span class="fn">with_env_filter</span>(<span class="st">"info"</span>)      <span class="cm">// ou RUST_LOG=debug cargo run</span>
+        .<span class="fn">init</span>();
+
+    <span class="kw">let</span> span = tracing::<span class="ma">info_span!</span>(<span class="st">"carregar_config"</span>);
+    <span class="kw">let</span> _guard = span.<span class="fn">enter</span>();
+
+    tracing::<span class="ma">info!</span>(tema = <span class="st">"escuro"</span>, <span class="st">"config carregada"</span>);
+    tracing::<span class="ma">debug!</span>(<span class="st">"detalhes extras aqui"</span>);
+    tracing::<span class="ma">warn!</span>(<span class="st">"bateria em 15%"</span>);
+    tracing::<span class="ma">error!</span>(<span class="st">"falhou: {e}"</span>);
+}</code></pre>
+    <p>Nível por módulo via variável de ambiente: <code>RUST_LOG=shell_ui=debug,info cargo run</code>. Compare com <code>logging.properties</code> do Java — mais simples.</p>
+
+    <h2>Testes</h2>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="cm">// src/test/java/CalcTest.java</span>
+<span class="kw">class</span> <span class="ty">CalcTest</span> {
+    @<span class="ty">Test</span>
+    <span class="ty">void</span> <span class="fn">soma</span>() {
+        <span class="fn">assertEquals</span>(<span class="nu">4</span>, <span class="ty">Calc</span>.<span class="fn">soma</span>(<span class="nu">2</span>, <span class="nu">2</span>));
+    }
+}
+<span class="cm">// mvn test</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="cm">// no PRÓPRIO arquivo (idiomático)</span>
+<span class="at">#[cfg(test)]</span>
+<span class="kw">mod</span> tests {
+    <span class="kw">use</span> <span class="kw">super</span>::*;
+
+    <span class="at">#[test]</span>
+    <span class="kw">fn</span> <span class="fn">soma</span>() {
+        <span class="ma">assert_eq!</span>(<span class="fn">soma</span>(<span class="nu">2</span>, <span class="nu">2</span>), <span class="nu">4</span>);
+    }
+}
+<span class="cm">// cargo test</span></code></pre>
+      </div>
+    </div>
+    <ul class="topics">
+      <li>Testes de unidade vivem junto do código (<code>#[cfg(test)]</code> só compila em teste) — testáveis até de itens privados.</li>
+      <li>Testes de integração ficam em <code>tests/</code>, um arquivo por binário de teste.</li>
+      <li>Macros: <code>assert!</code>, <code>assert_eq!</code>, <code>assert_ne!</code>, <code>#[should_panic]</code>.</li>
+      <li>Nada de JUnit: o harness de testes é embutido no cargo.</li>
+    </ul>
+
+    <h2>Documentação e qualidade</h2>
+<pre><code><span class="cm">/// Calcula o volume ideal do buffer de frames.</span>
+<span class="cm">///</span>
+<span class="cm">/// # Erros</span>
+<span class="cm">/// Retorna `Err` se `fps` for zero.</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">volume_buffer</span>(fps: <span class="ty">u32</span>, ms: <span class="ty">u32</span>) -&gt; <span class="ty">Result</span>&lt;<span class="ty">usize</span>, <span class="ty">ConfigError</span>&gt; { ... }</code></pre>
+    <ul class="topics">
+      <li><code>///</code> = doc comment (≈ javadoc); vira página com <code>cargo doc --open</code> (markdown embutido).</li>
+      <li><code>cargo fmt</code> — formatador oficial; sem debate de estilo (≈ gofmt).</li>
+      <li><code>cargo clippy</code> — linter com ~700 regras idiomáticas; trate os avisos como aprendizado.</li>
+    </ul>
+
+    <h2>Projeto final da Parte 1</h2>
+    <p>Junte tudo num <code>mini-shell-clock</code>:</p>
+    <ol>
+      <li>Crate com <code>lib.rs</code> + <code>main.rs</code>, módulos <code>config</code> e <code>loop</code>.</li>
+      <li>Uma thread produtora envia <code>Evento::Tick</code> a cada segundo por canal.</li>
+      <li>O main consome o canal num <code>while let</code>, loga com <code>tracing</code>.</li>
+      <li>Config fake (<code>const</code> ou <code>&amp;str</code> TOML) validada com <code>Result</code> + thiserror.</li>
+      <li>Erro fatal no boot → <code>anyhow</code> com <code>.context()</code>.</li>
+      <li>1 teste de unidade, <code>cargo fmt</code> e <code>cargo clippy</code> limpos.</li>
+    </ol>
+    <p class="muted">~100 linhas. Se você conseguiu, tem o arsenal da Fase 1 do roadmap — siga para <a href="wayland.html">Wayland</a>.</p>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch07-00-managing-growing-projects-with-packages-crates-and-modules.html">The Book — Packages, Crates e Modules</a></li>
+      <li><a href="https://doc.rust-lang.org/book/ch11-00-testing.html">The Book — Testing</a></li>
+      <li><a href="https://docs.rs/tracing">tracing</a> · <a href="https://docs.rs/tracing-subscriber">tracing-subscriber</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-08-async.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Async/await e Tokio</span>
+  </a>
+  <a class="next" href="wayland.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Wayland: fundamentos e Rust</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

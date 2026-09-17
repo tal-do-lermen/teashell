@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 01 — Configuração do ambiente e Cargo</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 01/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Configuração do ambiente e Cargo</h1>
+    <p class="lead">Se você já usou <code>npm</code> ou <code>Maven</code>, o Cargo vai parecer familiar: ele é npm + jest + eslint + prettier + javadoc em <strong>um binário só</strong>.</p>
+
+    <h2>Instalando via rustup</h2>
+    <p><code>rustup</code> é o gerenciador de toolchains do Rust (pense nvm/pyenv, mas oficial). Instale com:</p>
+<pre class="terminal"><code>curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh</code></pre>
+    <p>Isso instala no seu <code>~/.cargo</code> (sem sudo):</p>
+    <ul class="topics">
+      <li><code>rustc</code> — o compilador</li>
+      <li><code>cargo</code> — build tool + gerenciador de pacotes</li>
+      <li><code>rustfmt</code> — formatador (≈ prettier)</li>
+      <li><code>clippy</code> — linter (≈ eslint/checkstyle)</li>
+    </ul>
+    <div class="warn">
+      <p>Não instale Rust via <code>apt install rustc</code> ou similar — versões de distro costumam estar defasadas e o ecossistema se move rápido. Use sempre rustup e mantenha tudo atualizado com <code>rustup update</code>.</p>
+    </div>
+
+    <h2>Verificando a instalação</h2>
+<pre class="terminal"><code>rustc --version
+cargo --version
+rustup doc</code></pre>
+    <p><code>rustup doc</code> abre a documentação completa <strong>offline</strong> — incluindo "The Book", que será sua principal referência.</p>
+
+    <h2>Cargo — o canivete suíço</h2>
+    <table>
+      <tr><th>Tarefa</th><th>Cargo</th><th>Node (npm)</th><th>Java (Maven)</th></tr>
+      <tr><td>Criar projeto</td><td><code>cargo new app</code></td><td><code>npm init</code></td><td><code>mvn archetype:generate</code></td></tr>
+      <tr><td>Rodar</td><td><code>cargo run</code></td><td><code>npm run dev</code></td><td><code>mvn exec:java</code></td></tr>
+      <tr><td>Build de produção</td><td><code>cargo build --release</code></td><td><code>npm run build</code></td><td><code>mvn package</code></td></tr>
+      <tr><td>Testes</td><td><code>cargo test</code></td><td><code>npm test</code></td><td><code>mvn test</code></td></tr>
+      <tr><td>Adicionar dependência</td><td><code>cargo add serde</code></td><td><code>npm install x</code></td><td>editar <code>pom.xml</code></td></tr>
+      <tr><td>Lint</td><td><code>cargo clippy</code></td><td>eslint</td><td>checkstyle</td></tr>
+      <tr><td>Formatar</td><td><code>cargo fmt</code></td><td>prettier</td><td>—</td></tr>
+      <tr><td>Docs</td><td><code>cargo doc --open</code></td><td>—</td><td><code>mvn javadoc</code></td></tr>
+      <tr><td>Checar rápido (sem gerar binário)</td><td><code>cargo check</code></td><td>—</td><td><code>mvn compile</code></td></tr>
+    </table>
+    <div class="tip">
+      <p>Use <code>cargo check</code> constantemente durante o aprendizado: é muito mais rápido que <code>build</code> e já mostra todos os erros do compilador. Pense nele como o "salvar arquivo" do Rust.</p>
+    </div>
+
+    <h2>Estrutura de um projeto</h2>
+<pre><code>hello_cargo/
+├── Cargo.toml        # ≈ package.json / pom.xml
+├── Cargo.lock        # ≈ package-lock.json — commit sempre em binários
+├── src/
+│   └── main.rs       # ponto de entrada
+└── target/           # ≈ build output (gitignored)</code></pre>
+    <p>O <code>Cargo.toml</code> mínimo:</p>
+<pre><code><span class="ty">[package]</span>
+<span class="fn">name</span> = <span class="st">"hello_cargo"</span>
+<span class="fn">version</span> = <span class="st">"0.1.0"</span>
+<span class="fn">edition</span> = <span class="st">"2021"</span>
+
+<span class="ty">[dependencies]</span></code></pre>
+    <div class="note">
+      <p>Diferença importante do npm: as dependências são baixadas para um <strong>cache global</strong> (<code>~/.cargo/registry</code>), não para uma pasta <code>node_modules</code> por projeto. O registry é o <a href="https://crates.io">crates.io</a> — equivalente ao npmjs.com.</p>
+    </div>
+
+    <h2>Hello World</h2>
+<pre><code><span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="ma">println!</span>(<span class="st">"Hello, world!"</span>);
+}</code></pre>
+    <p>Dois detalhes que já contam muito:</p>
+    <ul>
+      <li><code>fn</code> declara funções; <code>main</code> é o ponto de entrada (como <code>public static void main</code>).</li>
+      <li><code>println!</code> tem uma <strong>exclamação</strong> porque é uma <em>macro</em>, não uma função. Macros compilam para código especializado em tempo de compilação. Você verá <code>!</code> bastante: <code>vec![]</code>, <code>format!</code>, <code>assert_eq!</code>…</li>
+    </ul>
+<pre><code><span class="kw">fn</span> <span class="fn">main</span>() {
+    <span class="kw">let</span> nome = <span class="st">"mundo"</span>;
+    <span class="ma">println!</span>(<span class="st">"Hello, {nome}!"</span>);        <span class="cm">// interpolação direta</span>
+    <span class="ma">println!</span>(<span class="st">"Hello, {}!"</span>, nome);      <span class="cm">// com argumento posicional</span>
+}</code></pre>
+
+    <h2>Editor</h2>
+    <p>Recomendação: <strong>VS Code + extensão rust-analyzer</strong>. O rust-analyzer dá autocomplete, type hints inline, e — crucial — explica erros do compilador com sugestões de correção. As mensagens de erro do Rust são as melhores da indústria: <strong>leia-as com atenção</strong>, elas quase sempre dizem exatamente o que fazer.</p>
+    <div class="tip">
+      <p>Habilite o clippy no editor instalando a extensão e rodando <code>cargo clippy</code> de vez em quando. Ele pega idiomas errados que o compilador deixa passar.</p>
+    </div>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Crie um projeto <code>hello_cargo</code> com <code>cargo new</code>, rode com <code>cargo run</code>.</li>
+      <li>Modifique o programa para imprimir seu nome usando interpolação.</li>
+      <li>Compile em modo release (<code>cargo build --release</code>) e execute o binário direto de <code>target/release/</code>.</li>
+      <li>Instale o <a href="https://github.com/rust-lang/rustlings">Rustlings</a> (<code>cargo install rustlings</code>) — ele será seu companheiro nos próximos capítulos.</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch01-00-getting-started.html">The Book — Getting Started</a></li>
+      <li><a href="https://doc.rust-lang.org/cargo/">The Cargo Book</a></li>
+      <li><a href="https://rustup.rs">rustup.rs</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="index.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Início</span>
+  </a>
+  <a class="next" href="rust-02-basics.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Fundamentos: variáveis, tipos e funções</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

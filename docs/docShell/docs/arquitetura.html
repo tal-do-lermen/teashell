@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Arquitetura interna</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 04/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>Arquitetura interna</h1>
+    <p class="lead">Como organizar um app de longa duração com vários subsistemas independentes — é aqui que tudo que você aprendeu de Rust (threads, canais, traits, ownership) vira design.</p>
+
+    <h2>O esqueleto</h2>
+    <p>Estude esta arquitetura:</p>
+<pre class="diagram"><code>Wayland Event Loop
+        ↓
+Application State
+        ↓
+Message/Event Bus
+        ↓
+Modules</code></pre>
+    <p>Em termos do que você já conhece: um loop de eventos (como <code>rx.recv().await</code> do capítulo async), um estado central protegido, um canal distribuidor e módulos como consumidores/produtores de eventos.</p>
+
+    <h2>Separe conceitualmente os módulos</h2>
+    <ul class="topics">
+      <li>Bar</li>
+      <li>Launcher</li>
+      <li>Notifications</li>
+      <li>Dock</li>
+      <li>Control Center</li>
+      <li>Lock Screen</li>
+      <li>Wallpaper</li>
+      <li>Widgets</li>
+      <li>Configuration</li>
+      <li>D-Bus services</li>
+      <li>IPC</li>
+    </ul>
+
+    <h2>Padrões a pesquisar</h2>
+    <ul class="topics">
+      <li>Event-driven architecture</li>
+      <li>State machines</li>
+      <li>Message passing</li>
+      <li>Actor model</li>
+      <li>Observer pattern</li>
+      <li>Dependency inversion</li>
+      <li>Modular architecture</li>
+    </ul>
+    <div class="warn">
+      <p>Evite criar um grande estado global compartilhado por todos os módulos (o <code>singleton</code> tentador de quem vem de Java). Em Rust isso vira briga com <code>Arc&lt;Mutex&gt;</code> em todo lugar. Prefira: cada módulo com seu estado, comunicação por eventos, e o mínimo de compartilhamento.</p>
+    </div>
+
+    <h2>Estrutura conceitual do projeto</h2>
+    <p>Uma possível divisão:</p>
+<pre class="diagram"><code>Application
+├── Wayland
+├── Renderer
+├── Input
+├── State
+├── Config
+├── IPC
+├── D-Bus
+│   ├── Notifications
+│   ├── Audio
+│   ├── Network
+│   ├── Bluetooth
+│   └── Power
+│
+├── UI
+│   ├── Bar
+│   ├── Launcher
+│   ├── Dock
+│   ├── Control Center
+│   ├── Notifications
+│   ├── Lock Screen
+│   └── Widgets
+│
+└── Wallpaper</code></pre>
+    <p>Mapeando para crates num workspace (o que você viu em <a href="rust-09-project.html">módulos e workspaces</a>):</p>
+<pre><code>shell/
+├── crates/
+│   ├── shell-core/      # state + event bus + config
+│   ├── shell-wayland/   # layer surfaces, input, outputs
+│   ├── shell-render/    # renderer (wgpu) + text
+│   ├── shell-dbus/      # um módulo por serviço
+│   ├── shell-ipc/       # unix socket + comandos
+│   └── shell-ui/        # bar, launcher, dock...
+└── shell/               # binário: só junta as peças</code></pre>
+
+    <h2>O princípio central</h2>
+    <blockquote><p>A ideia principal é evitar que os componentes de UI conheçam diretamente detalhes de D-Bus ou Wayland.</p></blockquote>
+    <p>Na prática, com dependency inversion:</p>
+    <ul class="topics">
+      <li>A <code>Bar</code> conhece <code>enum Evento</code> e <code>struct EstadoAudio</code> — nunca <code>zbus::Proxy</code>.</li>
+      <li>O módulo D-Bus traduz signals de PipeWire em <code>Evento::VolumeMudou(f64)</code>.</li>
+      <li>O módulo Wayland traduz teclas em <code>Evento::Tecla(...)</code>.</li>
+      <li>Testar a UI não exige Wayland nem D-Bus: envie eventos falsos (as <code>mocks</code> saem de graça com enums).</li>
+    </ul>
+<pre><code><span class="kw">enum</span> <span class="ty">Evento</span> {
+    <span class="ty">Wayland</span>(<span class="ty">EventoWayland</span>),
+    <span class="ty">Audio</span>(<span class="ty">EventoAudio</span>),
+    <span class="ty">Rede</span>(<span class="ty">EventoRede</span>),
+    <span class="ty">Config</span>(<span class="ty">EventoConfig</span>),
+    <span class="ty">Ipc</span>(<span class="ty">Comando</span>),
+}</code></pre>
+
+    <h2>Exemplo 5 — o event bus em código</h2>
+    <p>Este é o coração do shell: um canal <code>mpsc</code> (você já fez um no <a href="rust-07-concurrency.html">capítulo de concorrência</a>) com módulos conectados por trait — nada de estado global.</p>
+<pre><code><span class="kw">use</span> std::sync::mpsc::{channel, <span class="ty">Receiver</span>, <span class="ty">Sender</span>};
+
+<span class="cm">// Eventos do shell — a ÚNICA coisa que os módulos compartilham</span>
+<span class="at">#[derive(Debug, Clone)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ty">Evento</span> {
+    <span class="ty">Tick</span>,
+    <span class="ty">Volume</span> { nivel: <span class="ty">f64</span>, mute: <span class="ty">bool</span> },
+    <span class="ty">Bateria</span> { percentual: <span class="ty">u8</span>, carregando: <span class="ty">bool</span> },
+    <span class="ty">Tecla</span> { code: <span class="ty">u32</span> },
+    <span class="ty">Idle</span>,
+    <span class="ty">Redesenhar</span>,
+    <span class="ty">Comando</span>(<span class="ty">Comando</span>),
+}
+
+<span class="at">#[derive(Debug, Clone)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ty">Comando</span> {
+    <span class="ty">ToggleLauncher</span>,
+    <span class="ty">Reload</span>,
+    <span class="ty">Lock</span>,
+    <span class="ty">Quit</span>,
+}
+
+<span class="cm">// Contrato dos módulos: entram eventos, saem eventos</span>
+<span class="kw">pub</span> <span class="kw">trait</span> <span class="ty">Modulo</span> {
+    <span class="kw">fn</span> <span class="fn">nome</span>(&amp;<span class="kw">self</span>) -&gt; &amp;<span class="lt">'static</span> <span class="ty">str</span>;
+    <span class="kw">fn</span> <span class="fn">handle</span>(&amp;<span class="kw">mut</span> <span class="kw">self</span>, evento: &amp;<span class="ty">Evento</span>, saida: &amp;<span class="ty">Sender</span>&lt;<span class="ty">Evento</span>&gt;);
+}
+
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Bus</span> {
+    tx: <span class="ty">Sender</span>&lt;<span class="ty">Evento</span>&gt;,
+    rx: <span class="ty">Receiver</span>&lt;<span class="ty">Evento</span>&gt;,
+}
+
+<span class="kw">impl</span> <span class="ty">Bus</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">novo</span>() -&gt; <span class="kw">Self</span> {
+        <span class="kw">let</span> (tx, rx) = <span class="fn">channel</span>();
+        <span class="kw">Self</span> { tx, rx }
+    }
+
+    <span class="cm">// cada produtor (wayland, dbus, ipc) guarda um clone deste tx</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">tx</span>(&amp;<span class="kw">self</span>) -&gt; <span class="ty">Sender</span>&lt;<span class="ty">Evento</span>&gt; {
+        <span class="kw">self</span>.tx.<span class="fn">clone</span>()
+    }
+
+    <span class="cm">// roda numa thread dedicada até chegar Comando::Quit</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">rodar</span>(<span class="kw">mut</span> <span class="kw">self</span>, <span class="kw">mut</span> modulos: <span class="ty">Vec</span>&lt;<span class="ty">Box</span>&lt;<span class="kw">dyn</span> <span class="ty">Modulo</span>&gt;&gt;) {
+        <span class="kw">while</span> <span class="kw">let</span> <span class="ty">Ok</span>(evento) = <span class="kw">self</span>.rx.<span class="fn">recv</span>() {
+            <span class="kw">if</span> <span class="ma">matches!</span>(evento, <span class="ty">Evento</span>::<span class="ty">Comando</span>(<span class="ty">Comando</span>::<span class="ty">Quit</span>)) {
+                <span class="kw">break</span>;
+            }
+            <span class="kw">for</span> m <span class="kw">in</span> &amp;<span class="kw">mut</span> modulos {
+                m.<span class="fn">handle</span>(&amp;evento, &amp;<span class="kw">self</span>.tx);
+            }
+        }
+    }
+}
+
+<span class="cm">// um módulo de exemplo — repare: ele NÃO conhece zbus nem wayland</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">ModuloNotificacoes</span>;
+
+<span class="kw">impl</span> <span class="ty">Modulo</span> <span class="kw">for</span> <span class="ty">ModuloNotificacoes</span> {
+    <span class="kw">fn</span> <span class="fn">nome</span>(&amp;<span class="kw">self</span>) -&gt; &amp;<span class="lt">'static</span> <span class="ty">str</span> { <span class="st">"notificações"</span> }
+
+    <span class="kw">fn</span> <span class="fn">handle</span>(&amp;<span class="kw">mut</span> <span class="kw">self</span>, evento: &amp;<span class="ty">Evento</span>, saida: &amp;<span class="ty">Sender</span>&lt;<span class="ty">Evento</span>&gt;) {
+        <span class="kw">if</span> <span class="kw">let</span> <span class="ty">Evento</span>::<span class="ty">Comando</span>(<span class="ty">Comando</span>::<span class="ty">ToggleLauncher</span>) = evento {
+            <span class="cm">// decidir, emitir, seguir — sem bloquear os outros módulos</span>
+            <span class="kw">let</span> _ = saida.<span class="fn">send</span>(<span class="ty">Evento</span>::<span class="ty">Redesenhar</span>);
+        }
+    }
+}
+
+<span class="cm">// o bootstrap (no main):</span>
+<span class="cm">// let bus = Bus::novo();</span>
+<span class="cm">// let tx = bus.tx();</span>
+<span class="cm">// std::thread::spawn(move || bus.rodar(vec![Box::new(ModuloNotificacoes)]));</span>
+<span class="cm">// iniciar_wayland(tx.clone())?;    // produtor</span>
+<span class="cm">// iniciar_dbus(tx.clone())?;       // produtor</span>
+<span class="cm">// iniciar_ipc(tx)?;                // produtor</span></code></pre>
+    <p>Por que isto funciona:</p>
+    <ul class="topics">
+      <li><code>tx.clone()</code> por produtor, um único <code>rx</code> no bus — o padrão mpsc do capítulo 7.</li>
+      <li><code>Box&lt;dyn Modulo&gt;</code> é o <code>dyn Trait</code> do capítulo 4: polimorfismo em runtime, cada módulo testável isoladamente com eventos falsos.</li>
+      <li>Módulos não compartilham <code>struct</code> nenhuma: só conversam por eventos (actor/observer). Config compartilhada? Vira evento <code>ConfigAtualizada(Config)</code> ou um <code>Arc&lt;RwLock&lt;Config&gt;&gt;</code> — nunca um mutex global solto.</li>
+      <li>A versão async (tokio <code>mpsc</code> + <code>.await</code>) é idêntica em forma — você viu o esqueleto no <a href="rust-08-async.html">capítulo async</a>.</li>
+    </ul>
+    <div class="refs">
+      <ul>
+        <li><a href="https://doc.rust-lang.org/book/ch16-02-message-passing.html">The Book — Message Passing</a> (o padrão do bus)</li>
+        <li><a href="https://docs.rs/tokio/latest/tokio/sync/mpsc/index.html">tokio::sync::mpsc</a> — a versão async do mesmo canal</li>
+        <li><a href="https://en.wikipedia.org/wiki/Actor_model">Actor model</a> — o nome acadêmico do que este código faz</li>
+      </ul>
+    </div>
+
+    <h2>Links</h2>
+    <ul>
+      <li><a href="https://tokio.rs/tokio/tutorial/channels">Tokio — Channels (o bus em prática)</a></li>
+      <li><a href="https://en.wikipedia.org/wiki/Actor_model">Actor model (visão geral)</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rendering-ui.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Rendering, UI Toolkit e Input</span>
+  </a>
+  <a class="next" href="servicos-dbus.html">
+    <span class="dir">próxima →</span>
+    <span class="title">D-Bus e serviços do sistema</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

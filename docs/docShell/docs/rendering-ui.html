@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Rendering, UI Toolkit e Input</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 03/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>Rendering, UI Toolkit e Input</h1>
+    <p class="lead">Como desenhar na tela, como estruturar a UI e como o teclado/mouse chegam até você. São três domínios que se encontram no shell.</p>
+
+    <h2>Rendering</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>GPU rendering</li>
+      <li>Vulkan</li>
+      <li>EGL</li>
+      <li>OpenGL ES</li>
+      <li>Wayland EGL</li>
+      <li>DMA-BUF</li>
+      <li>GPU buffers</li>
+      <li>Texture atlas</li>
+      <li>GPU compositing</li>
+      <li>VSync</li>
+      <li>Frame callbacks</li>
+      <li>Frame pacing</li>
+      <li>Damage tracking</li>
+      <li>Partial rendering</li>
+      <li>Dirty rectangles</li>
+    </ul>
+    <p>Bibliotecas/tecnologias para estudar e comparar antes de escolher:</p>
+    <table>
+      <tr><th>Tecnologia</th><th>Nível</th><th>Perfil</th></tr>
+      <tr><td><a href="https://wgpu.rs">wgpu</a></td><td>gráficos modernos (WebGPU)</td><td>controle total, mais código; padrão em Rust</td></tr>
+      <tr><td>Skia (via bindings)</td><td>canvas 2D completo</td><td>binding pesado (C++), muito poderoso</td></tr>
+      <tr><td><a href="https://github.com/linebender/vello">Vello</a></td><td>2D por GPU (compute shaders)</td><td>promissor, ecossistema Linebender</td></tr>
+    </table>
+    <p>Para texto:</p>
+    <ul class="topics">
+      <li><a href="https://docs.rs/glyphon"><code>glyphon</code></a> — renderização de texto sobre wgpu</li>
+      <li><a href="https://docs.rs/cosmic-text"><code>cosmic-text</code></a> — shaping, fonts, bidi, layout (usado pelo COSMIC)</li>
+    </ul>
+
+    <h2>UI Toolkit</h2>
+    <p>Antes de escolher uma biblioteca, entenda os conceitos:</p>
+    <ul class="topics">
+      <li>Widget tree</li>
+      <li>Layout engine</li>
+      <li>Retained mode</li>
+      <li>Immediate mode</li>
+      <li>Hit testing</li>
+      <li>Focus management</li>
+      <li>Keyboard navigation</li>
+      <li>Mouse/pointer events</li>
+      <li>State management</li>
+      <li>Reactive UI</li>
+      <li>Rendering pipeline</li>
+    </ul>
+    <div class="note">
+      <p><strong>Retained vs immediate:</strong> em retained mode (Iced, Slint, como JavaFX/React) existe uma árvore de widgets persistente que você atualiza; o framework decide quando redesenhar. Em immediate mode (egui, como Dear ImGui) você descreve a UI inteira todo frame e a biblioteca diffifica por baixo. Vale conhecer os dois modelos antes de escolher.</p>
+    </div>
+    <p>Toolkits para pesquisar:</p>
+    <table>
+      <tr><th>Toolkit</th><th>Modelo</th><th>Nota</th></tr>
+      <tr><td><a href="https://iced.rs">Iced</a></td><td>retained/Elm (messages)</td><td>arquitetura Elm: state + update + view</td></tr>
+      <tr><td><a href="https://slint.dev">Slint</a></td><td>retained, DSL próprio</td><td>linguagem de UI declarativa, ótimo tooling</td></tr>
+      <tr><td><a href="https://egui.rs">egui</a></td><td>immediate mode</td><td>rápido de prototipar, muito usado em tools</td></tr>
+      <tr><td><a href="https://github.com/pop-os/libcosmic">Cosmic Toolkit</a></td><td>retained, sobre iced</td><td>o desktop COSMIC da System76</td></tr>
+    </table>
+    <div class="tip">
+      <p>Para aprender a arquitetura, vale implementar primeiro uma pequena camada própria de UI (retângulos + texto + hit testing) mesmo que posteriormente você adote um toolkit. É o melhor exercício para entender o que o toolkit faz por você.</p>
+    </div>
+
+    <h2>Input</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li><code>wl_seat</code></li>
+      <li><code>wl_pointer</code></li>
+      <li><code>wl_keyboard</code></li>
+      <li>Keyboard focus</li>
+      <li>Pointer focus</li>
+      <li>Keyboard modifiers</li>
+      <li>Key repeat</li>
+      <li>Cursor</li>
+      <li>XCursor</li>
+      <li>Pointer motion</li>
+      <li>Button events</li>
+      <li>Keyboard key events</li>
+    </ul>
+    <p>Entenda como o shell recebe eventos e como eles chegam aos componentes:</p>
+<pre class="diagram"><code>Wayland
+  ↓
+input
+  ↓
+event dispatcher
+  ↓
+componente
+  ↓
+ação</code></pre>
+    <p class="muted">Este dispatcher é o mesmo event bus estudado na <a href="arquitetura.html">arquitetura</a> — input é só mais um produtor de eventos.</p>
+
+    <h2>Exemplo 3 — input: pointer até o hit testing</h2>
+<pre><code><span class="cm">// Cargo.toml: wayland-client = "0.31"</span>
+<span class="kw">use</span> wayland_client::{
+    protocol::{wl_pointer, wl_seat},
+    <span class="ty">Connection</span>, <span class="ty">Dispatch</span>, <span class="ty">QueueHandle</span>, <span class="ty">WEnum</span>,
+};
+
+<span class="kw">struct</span> <span class="ty">App</span> {
+    cursor: (<span class="ty">f64</span>, <span class="ty">f64</span>),
+    hover: <span class="ty">Option</span>&lt;wayland_client::protocol::wl_surface::<span class="ty">WlSurface</span>&gt;,
+    <span class="cm">// ...</span>
+}
+
+<span class="cm">// o compositor anuncia o que o seat tem (mouse? teclado?)</span>
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;wl_seat::<span class="ty">WlSeat</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, seat: &amp;wl_seat::<span class="ty">WlSeat</span>, event: wl_seat::<span class="ty">Event</span>,
+             _: &amp;(), _: &amp;<span class="ty">Connection</span>, qh: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">if</span> <span class="kw">let</span> wl_seat::<span class="ty">Event</span>::<span class="ty">Capabilities</span> { capabilities: <span class="ty">WEnum</span>::<span class="ty">Value</span>(caps) } = event {
+            <span class="kw">if</span> caps.<span class="fn">contains</span>(wl_seat::<span class="ty">Capability</span>::<span class="ty">Pointer</span>) {
+                <span class="kw">let</span> _pointer = seat.<span class="fn">get_pointer</span>(qh, ());    <span class="cm">// cria o proxy do mouse</span>
+            }
+            <span class="kw">if</span> caps.<span class="fn">contains</span>(wl_seat::<span class="ty">Capability</span>::<span class="ty">Keyboard</span>) {
+                <span class="kw">let</span> _keyboard = seat.<span class="fn">get_keyboard</span>(qh, ());
+            }
+        }
+    }
+}
+
+<span class="cm">// os eventos do mouse chegam aqui — em COORDENADAS DA SUA SURFACE</span>
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;wl_pointer::<span class="ty">WlPointer</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, _p: &amp;wl_pointer::<span class="ty">WlPointer</span>, event: wl_pointer::<span class="ty">Event</span>,
+             _: &amp;(), _: &amp;<span class="ty">Connection</span>, _qh: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {
+        <span class="kw">match</span> event {
+            wl_pointer::<span class="ty">Event</span>::<span class="ty">Enter</span> { surface, surface_x, surface_y, .. } =&gt; {
+                state.hover = <span class="ty">Some</span>(surface);
+                state.cursor = (surface_x, surface_y);
+            }
+            wl_pointer::<span class="ty">Event</span>::<span class="ty">Motion</span> { surface_x, surface_y, .. } =&gt; {
+                state.cursor = (surface_x, surface_y);      <span class="cm">// f64, lógico</span>
+            }
+            wl_pointer::<span class="ty">Event</span>::<span class="ty">Button</span> { button, state: <span class="ty">WEnum</span>::<span class="ty">Value</span>(botao), .. } =&gt; {
+                <span class="kw">if</span> botao == wl_pointer::<span class="ty">ButtonState</span>::<span class="ty">Pressed</span> {
+                    <span class="cm">// hit testing: qual widget está em state.cursor?</span>
+                    state.<span class="fn">click</span>(button);
+                }
+            }
+            wl_pointer::<span class="ty">Event</span>::<span class="ty">Leave</span> { .. } =&gt; state.hover = <span class="ty">None</span>,
+            _ =&gt; {}   <span class="cm">// frame, axis (scroll), axis_source...</span>
+        }
+    }
+}</code></pre>
+    <ul class="topics">
+      <li>O campo <code>button</code> é um código bruto do kernel (<code>0x110</code> = botão esquerdo) — vem de <code>linux/input-event-codes.h</code>.</li>
+      <li>Teclado segue o mesmo padrão: <code>wl_keyboard</code> entrega <code>Keymap</code>, <code>Modifiers</code>, <code>Key</code> (código bruto + keymap xkb para traduzir).</li>
+      <li>Na arquitetura do shell, cada um desses branches vira um <code>Evento</code> enviado ao bus (<a href="arquitetura.html">Exemplo 5</a>).</li>
+    </ul>
+    <div class="refs">
+      <ul>
+        <li><a href="https://wayland.app/protocols/wayland#wl_pointer">eventos de wl_pointer na spec</a> — a lista completa com semântica de cada um</li>
+        <li><a href="https://docs.rs/wayland-client">docs.rs/wayland-client</a> — módulos <code>wl_pointer</code>/<code>wl_keyboard</code></li>
+        <li>Para o cursor visual: protocolo <code>wp_cursor_shape_manager_v1</code> (o compositor desenha o cursor pra você) — docs.rs/wayland-protocols</li>
+      </ul>
+    </div>
+
+    <h2>Exemplo 4 — o frame com wgpu (esqueleto)</h2>
+<pre><code><span class="cm">// Cargo.toml: wgpu = "25"   // confira a versão atual — a API muda entre majors</span>
+
+<span class="kw">fn</span> <span class="fn">render</span>(device: &amp;wgpu::<span class="ty">Device</span>, queue: &amp;wgpu::<span class="ty">Queue</span>, surface: &amp;wgpu::<span class="ty">Surface</span>) {
+    <span class="cm">// pega o próximo buffer — BLOQUEIA até o vsync/frame callback do compositor</span>
+    <span class="kw">let</span> frame = surface.<span class="fn">get_current_texture</span>().<span class="fn">unwrap</span>();
+    <span class="kw">let</span> view = frame.texture.<span class="fn">create_view</span>(&amp;<span class="ty">Default</span>::<span class="fn">default</span>());
+
+    <span class="kw">let</span> <span class="kw">mut</span> encoder = device.<span class="fn">create_command_encoder</span>(&amp;<span class="ty">Default</span>::<span class="fn">default</span>());
+    {
+        <span class="kw">let</span> <span class="kw">mut</span> pass = encoder.<span class="fn">begin_render_pass</span>(&amp;wgpu::<span class="ty">RenderPassDescriptor</span> {
+            color_attachments: &amp;[<span class="ty">Some</span>(wgpu::<span class="ty">RenderPassColorAttachment</span> {
+                view: &amp;view,
+                resolve_target: <span class="ty">None</span>,
+                ops: wgpu::<span class="ty">Operations</span> {
+                    load: wgpu::<span class="ty">LoadOp</span>::<span class="ty">Clear</span>(wgpu::<span class="ty">Color</span> {   <span class="cm">// "pinta o fundo"</span>
+                        r: <span class="nu">0.06</span>, g: <span class="nu">0.09</span>, b: <span class="nu">0.12</span>, a: <span class="nu">1.0</span>,
+                    }),
+                    store: wgpu::<span class="ty">StoreOp</span>::<span class="ty">Store</span>,
+                },
+            })],
+            ..<span class="ty">Default</span>::<span class="fn">default</span>()
+        });
+        <span class="cm">// aqui dentro vão os draw calls dos seus widgets</span>
+    }
+    queue.<span class="fn">submit</span>([encoder.<span class="fn">finish</span>()]);
+    frame.<span class="fn">present</span>();
+}</code></pre>
+    <p><code>get_current_texture()</code> já implementa o frame pacing: ele espera o momento certo do refresh — é o frame callback do protocolo virando código. A parte que <em>conecta</em> a Wayland surface ao wgpu (EGL/handles) é a mais chata de escrever na mão: não reinvente, copie de um exemplo oficial.</p>
+    <div class="refs">
+      <ul>
+        <li><a href="https://github.com/gfx-rs/wgpu/tree/master/examples">exemplos oficiais do wgpu</a> — o <code>hello-triangle</code> mostra a criação de device/surface</li>
+        <li><a href="https://sotrh.github.io/learn-wgpu/">Learn WGPU</a> — o tutorial clássico, comece por aqui</li>
+        <li><a href="https://docs.rs/wgpu">docs.rs/wgpu</a> — e para a integração Wayland: <code>wgpu::SurfaceTarget</code> + raw-window-handle</li>
+      </ul>
+    </div>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://wgpu.rs">wgpu</a> · <a href="https://docs.rs/wgpu">docs.rs/wgpu</a></li>
+      <li><a href="https://docs.rs/cosmic-text">cosmic-text</a> · <a href="https://docs.rs/glyphon">glyphon</a></li>
+      <li><a href="https://wayland.app/protocols/wayland#wl_seat">wl_seat na spec</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="layer-shell.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Layer Shell</span>
+  </a>
+  <a class="next" href="arquitetura.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Arquitetura interna</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

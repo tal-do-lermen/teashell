@@ -1,0 +1,348 @@
+/* ============================================================
+   Guia — Desktop Shell Wayland em Rust
+   Tema escuro, sem dependências externas
+   ============================================================ */
+
+:root {
+  --bg: #0e1116;
+  --bg-panel: #151a21;
+  --bg-code: #171d26;
+  --bg-inline: #222a35;
+  --border: #2a323d;
+  --text: #d8dee6;
+  --heading: #f0f4f8;
+  --muted: #8a94a3;
+  --accent: #e8875a;
+  --accent-soft: rgba(232, 135, 90, 0.10);
+  --link: #7aa2f7;
+  --green: #9ece6a;
+  --yellow: #e0af68;
+  --red: #f7768e;
+  --font-text: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-text);
+  font-size: 16.5px;
+  line-height: 1.7;
+}
+
+/* ---------- Header ---------- */
+.site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.brand {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 15px;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+.brand:hover { text-decoration: underline; }
+.crumb {
+  color: var(--muted);
+  font-size: 13px;
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+/* ---------- Layout ---------- */
+main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 42px 24px 24px;
+}
+
+h1 {
+  font-size: 1.9em;
+  line-height: 1.25;
+  color: var(--heading);
+  margin: 0 0 .4em;
+}
+h2 {
+  font-size: 1.35em;
+  color: var(--accent);
+  margin: 2.1em 0 .5em;
+  padding-bottom: .3em;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  font-size: 1.12em;
+  color: var(--heading);
+  margin: 1.6em 0 .4em;
+}
+p { margin: .8em 0; }
+a { color: var(--link); }
+a:hover { text-decoration: underline; }
+strong { color: var(--heading); }
+em { color: #c9d2dd; }
+ul, ol { padding-left: 26px; }
+li { margin: .25em 0; }
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2.4em 0;
+}
+.lead {
+  font-size: 1.06em;
+  color: var(--muted);
+  margin-top: 0;
+}
+.muted { color: var(--muted); font-size: .93em; }
+
+/* ---------- Código ---------- */
+pre {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-size: .88em;
+  line-height: 1.55;
+  margin: 1em 0;
+}
+code { font-family: var(--font-mono); }
+:not(pre) > code {
+  background: var(--bg-inline);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1.5px 6px;
+  font-size: .86em;
+  color: #f0c9a8;
+}
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+}
+
+/* ---------- Syntax highlighting ---------- */
+pre code .cm { color: #7f848e; font-style: italic; }
+pre code .st { color: #98c379; }
+pre code .kw { color: #c678dd; }
+pre code .fn { color: #61afef; }
+pre code .ty { color: #e5c07b; }
+pre code .nu { color: #d19a66; }
+pre code .ma { color: #56b6c2; }
+pre code .at { color: #d19a66; }
+pre code .lt { color: #fc6fa5; }
+pre.diagram {
+  background: var(--bg-panel);
+  color: #a9b7c6;
+  font-size: .8em;
+}
+pre.terminal { color: #b8c4cf; }
+pre.terminal code::before { content: "$ "; color: var(--green); }
+pre.terminal.plain code::before { content: none; }
+
+/* ---------- Tabelas ---------- */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: .93em;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: var(--bg-panel);
+  color: var(--accent);
+  font-weight: 600;
+}
+tr:nth-child(even) td { background: rgba(255, 255, 255, 0.015); }
+td code { white-space: nowrap; }
+
+/* ---------- Citações ---------- */
+blockquote {
+  margin: 1.2em 0;
+  padding: 10px 18px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 8px 8px 0;
+  color: #e9d9ce;
+}
+blockquote p { margin: .3em 0; }
+
+/* ---------- Callouts ---------- */
+.note, .warn, .tip {
+  margin: 1.2em 0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: .97em;
+}
+.note { background: rgba(122, 162, 247, .07); border: 1px solid rgba(122, 162, 247, .22); }
+.warn  { background: rgba(247, 118, 142, .07); border: 1px solid rgba(247, 118, 142, .22); }
+.tip   { background: rgba(158, 206, 106, .07); border: 1px solid rgba(158, 206, 106, .22); }
+.note::before { content: "Nota"; font-weight: 700; color: var(--link); display: block; font-size: .8em; text-transform: uppercase; letter-spacing: 1px; }
+.warn::before  { content: "Atenção"; font-weight: 700; color: var(--red); display: block; font-size: .8em; text-transform: uppercase; letter-spacing: 1px; }
+.tip::before   { content: "Dica"; font-weight: 700; color: var(--green); display: block; font-size: .8em; text-transform: uppercase; letter-spacing: 1px; }
+.note p, .warn p, .tip p { margin: .35em 0 0; }
+
+/* ---------- Caixa de referências ---------- */
+.refs {
+  background: rgba(122, 162, 247, .05);
+  border: 1px dashed rgba(122, 162, 247, .35);
+  margin: 1.4em 0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: .97em;
+}
+.refs::before {
+  content: "Onde buscar as infos";
+  font-weight: 700;
+  color: var(--link);
+  display: block;
+  font-size: .8em;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.refs p, .refs ul { margin: .35em 0 0; }
+
+/* ---------- Comparação lado a lado ---------- */
+.compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin: 1.2em 0;
+}
+.compare-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.compare-col pre { margin: 0; flex: 1; }
+.compare-tag {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .8px;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 20px;
+  align-self: flex-start;
+}
+.compare-tag.java {
+  background: rgba(255, 152, 56, .13);
+  color: #ff9c56;
+  border: 1px solid rgba(255, 152, 56, .3);
+}
+.compare-tag.js {
+  background: rgba(240, 219, 79, .10);
+  color: #ead66b;
+  border: 1px solid rgba(240, 219, 79, .25);
+}
+.compare-tag.rust {
+  background: rgba(222, 165, 132, .12);
+  color: #e8a87c;
+  border: 1px solid rgba(222, 165, 132, .32);
+}
+.compare-tag.out {
+  background: rgba(138, 148, 163, .12);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.compare-tag.err {
+  background: rgba(247, 118, 142, .12);
+  color: var(--red);
+  border: 1px solid rgba(247, 118, 142, .3);
+}
+@media (max-width: 760px) {
+  .compare { grid-template-columns: 1fr; }
+}
+
+/* ---------- Listas de tópicos ---------- */
+ul.topics {
+  list-style: none;
+  padding-left: 4px;
+}
+ul.topics li {
+  padding: 3px 0 3px 26px;
+  position: relative;
+}
+ul.topics li::before {
+  content: "▸";
+  position: absolute;
+  left: 6px;
+  color: var(--accent);
+}
+
+/* ---------- Sumário / TOC ---------- */
+.toc-section {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 22px 14px;
+  margin: 14px 0;
+}
+.toc-section h2 {
+  border-bottom: 1px solid var(--border);
+  margin: .8em 0 .6em;
+}
+.toc-section ol li { margin: .35em 0; }
+.toc-meta { color: var(--muted); font-size: .9em; }
+
+/* ---------- Pager (navegação anterior/próxima) ---------- */
+.pager {
+  max-width: 860px;
+  margin: 8px auto 0;
+  padding: 0 24px 34px;
+  display: flex;
+  gap: 12px;
+}
+.pager a {
+  flex: 1;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  background: var(--bg-panel);
+  transition: border-color .15s ease;
+}
+.pager a:hover { border-color: var(--accent); text-decoration: none; }
+.pager .dir {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  letter-spacing: .5px;
+}
+.pager .title {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.pager a.next { text-align: right; }
+.pager .spacer { flex: 1; }
+
+/* ---------- Rodapé ---------- */
+.site-footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 22px;
+  border-top: 1px solid var(--border);
+}
+.site-footer a { color: var(--muted); }

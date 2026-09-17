@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Configuração, IPC e performance</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 07/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>Configuração, IPC e performance</h1>
+    <p class="lead">A infraestrutura que amarra o shell: arquivo de config com hot reload, um socket de comandos, e a disciplina de performance para um app que roda o dia inteiro.</p>
+
+    <h2>Configuração</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>Serde</li>
+      <li>TOML</li>
+      <li>XDG Base Directory</li>
+      <li>XDG config directory</li>
+      <li>Config validation</li>
+      <li>Config reload</li>
+      <li>File watching</li>
+    </ul>
+    <p>Rust:</p>
+    <ul class="topics">
+      <li><a href="https://docs.rs/serde"><code>serde</code></a></li>
+      <li><a href="https://docs.rs/toml"><code>toml</code></a></li>
+      <li><a href="https://docs.rs/notify"><code>notify</code></a></li>
+    </ul>
+    <p>Estrutura conceitual:</p>
+<pre class="diagram"><code>config.toml
+      ↓
+parser
+      ↓
+validation
+      ↓
+application state</code></pre>
+    <p>Para hot reload:</p>
+<pre class="diagram"><code>arquivo alterado
+      ↓
+watcher
+      ↓
+parse
+      ↓
+validate
+      ↓
+apply</code></pre>
+    <div class="tip">
+      <p>Com serde, <code>struct Config</code> deriva <code>Deserialize</code> e o parse + validação viram: <code>toml::from_str::&lt;Config&gt;(&amp;texto)?</code> seguido de uma função <code>validate(&amp;config) -&gt; Result&lt;()&gt;</code> sua. Se a validação falhar no hot reload: logue o erro e <strong>mantenha a config antiga</strong> — nunca deixe o shell quebrar porque alguém salvou um TOML incompleto.</p>
+    </div>
+
+    <h2>IPC</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>Unix Domain Socket</li>
+      <li><code>UnixListener</code></li>
+      <li><code>UnixStream</code></li>
+      <li>Socket permissions</li>
+      <li>IPC protocol design</li>
+      <li>JSON-RPC</li>
+      <li>Length-prefixed protocol</li>
+      <li>Request/Response</li>
+      <li>Events</li>
+    </ul>
+    <p>Arquitetura:</p>
+<pre class="diagram"><code>CLI
+ ↓
+Unix socket
+ ↓
+Shell
+ ↓
+Command dispatcher
+ ↓
+State</code></pre>
+    <p>Comandos possíveis:</p>
+    <ul class="topics">
+      <li>reload</li>
+      <li>toggle launcher</li>
+      <li>toggle control center</li>
+      <li>show notification</li>
+      <li>change wallpaper</li>
+      <li>lock</li>
+      <li>quit</li>
+      <li>query state</li>
+    </ul>
+    <p>Em Rust: <code>std::os::unix::net::UnixListener</code> (sync) ou <code>tokio::net::UnixListener</code> (async). O socket em <code>$XDG_RUNTIME_DIR/myshell.sock</code> herda as permissões do diretório — só o seu usuário acessa. O dispatcher traduz o comando no <code>enum Comando</code> do <a href="arquitetura.html">event bus</a>.</p>
+
+    <h2>Performance</h2>
+    <p>Como o shell ficará sempre executando, performance deve ser estudada desde o começo.</p>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>Linux <code>perf</code></li>
+      <li><code>cargo flamegraph</code></li>
+      <li>Flamegraphs</li>
+      <li>Heap profiling</li>
+      <li>Allocation profiling</li>
+      <li>GPU profiling</li>
+      <li>RenderDoc</li>
+      <li>Sysprof</li>
+      <li><code>strace</code></li>
+      <li><code>bpftrace</code></li>
+      <li>eBPF</li>
+      <li><a href="https://docs.rs/criterion"><code>criterion</code></a> — benchmarks com estatística</li>
+      <li><a href="https://docs.rs/tracing"><code>tracing</code></a> — spans medem o seu próprio código</li>
+    </ul>
+    <p>Para Wayland:</p>
+    <ul class="topics">
+      <li>Frame callbacks</li>
+      <li>Damage tracking</li>
+      <li>Partial redraw</li>
+      <li>Dirty regions</li>
+      <li>Frame pacing</li>
+      <li>VSync</li>
+      <li>Input latency</li>
+      <li>GPU synchronization</li>
+    </ul>
+    <p>Evite uma arquitetura baseada em:</p>
+<pre class="diagram"><code>loop
+  ↓
+sleep(16ms)
+  ↓
+redraw everything</code></pre>
+    <p>Prefira:</p>
+<pre class="diagram"><code>event
+ ↓
+state changed?
+ ↓
+damage
+ ↓
+render
+ ↓
+frame callback
+ ↓
+wait</code></pre>
+    <p class="muted">É o mesmo princípio de um framework reativo: só redesenhe o que mudou, só quando houver frame callback pedindo. O <code>sleep</code> manual queima CPU sem melhorar nada — o frame callback já sincroniza com o refresh do monitor.</p>
+
+    <h2>Exemplo 12 — config com serde + hot reload</h2>
+<pre><code><span class="cm">// Cargo.toml:</span>
+<span class="cm">// [dependencies]</span>
+<span class="cm">// serde = { version = "1", features = ["derive"] }</span>
+<span class="cm">// toml = "0.8"</span>
+<span class="cm">// anyhow = "1"</span>
+
+<span class="kw">use</span> anyhow::{bail, <span class="ty">Context</span>, <span class="ty">Result</span>};
+<span class="kw">use</span> serde::<span class="ty">Deserialize</span>;
+<span class="kw">use</span> std::path::<span class="ty">Path</span>;
+
+<span class="at">#[derive(Debug, Deserialize)]</span>
+<span class="at">#[serde(deny_unknown_fields)]</span>        <span class="cm">// typo na config vira erro na hora certa</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Config</span> {
+    <span class="kw">pub</span> bar: <span class="ty">Bar</span>,
+}
+
+<span class="at">#[derive(Debug, Deserialize)]</span>
+<span class="kw">pub</span> <span class="kw">struct</span> <span class="ty">Bar</span> {
+    <span class="kw">pub</span> altura: <span class="ty">u32</span>,
+    <span class="at">#[serde(default = "default_fonte")]</span>
+    <span class="kw">pub</span> fonte: <span class="ty">String</span>,
+    <span class="at">#[serde(default)]</span>
+    <span class="kw">pub</span> mostrar_bateria: <span class="ty">bool</span>,
+}
+
+<span class="kw">fn</span> <span class="fn">default_fonte</span>() -&gt; <span class="ty">String</span> { <span class="st">"monospace 12"</span>.<span class="fn">into</span>() }
+
+<span class="cm">// parser -&gt; validation -&gt; application state (o fluxo do diagrama acima)</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">carregar</span>(caminho: &amp;<span class="ty">Path</span>) -&gt; <span class="ty">Result</span>&lt;<span class="ty">Config</span>&gt; {
+    <span class="kw">let</span> texto = std::fs::<span class="fn">read_to_string</span>(caminho)
+        .<span class="fn">with_context</span>(|| <span class="ma">format!</span>(<span class="st">"lendo {}"</span>, caminho.<span class="fn">display</span>()))?;
+    <span class="kw">let</span> config: <span class="ty">Config</span> = toml::<span class="fn">from_str</span>(&amp;texto).<span class="fn">context</span>(<span class="st">"parseando config"</span>)?;
+    <span class="fn">validar</span>(&amp;config)?;
+    <span class="ty">Ok</span>(config)
+}
+
+<span class="kw">fn</span> <span class="fn">validar</span>(c: &amp;<span class="ty">Config</span>) -&gt; <span class="ty">Result</span>&lt;()&gt; {
+    <span class="kw">if</span> c.bar.altura == <span class="nu">0</span> || c.bar.altura &gt; <span class="nu">200</span> {
+        <span class="ma">bail!</span>(<span class="st">"bar.altura deve estar entre 1 e 200"</span>);
+    }
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <p>Hot reload com <code>notify</code> — o watcher roda numa thread própria e fala com o bus por eventos (veja o <a href="arquitetura.html">Exemplo 5</a>):</p>
+<pre><code><span class="cm">// Cargo.toml: notify = "8"</span>
+<span class="kw">use</span> notify::{<span class="ty">Event</span>, <span class="ty">RecursiveMode</span>, <span class="ty">Watcher</span>};
+<span class="kw">use</span> std::sync::mpsc::{channel, <span class="ty">Sender</span>};
+<span class="kw">use</span> std::time::<span class="ty">Duration</span>;
+
+<span class="kw">fn</span> <span class="fn">observar</span>(caminho: std::path::<span class="ty">PathBuf</span>, tx: <span class="ty">Sender</span>&lt;<span class="ty">Evento</span>&gt;) -&gt; notify::<span class="ty">Result</span>&lt;()&gt; {
+    <span class="kw">let</span> (event_tx, event_rx) = <span class="fn">channel</span>();
+    <span class="kw">let</span> <span class="kw">mut</span> watcher = notify::<span class="fn">recommended_watcher</span>(<span class="kw">move</span> |res: <span class="ty">Result</span>&lt;<span class="ty">Event</span>, _&gt;| {
+        <span class="kw">if</span> res.<span class="fn">is_ok</span>() {
+            <span class="kw">let</span> _ = event_tx.<span class="fn">send</span>(());
+        }
+    })?;
+    watcher.<span class="fn">watch</span>(&amp;caminho, <span class="ty">RecursiveMode</span>::<span class="ty">NonRecursive</span>)?;
+
+    std::thread::<span class="fn">spawn</span>(<span class="kw">move</span> || {
+        <span class="kw">while</span> event_rx.<span class="fn">recv</span>().<span class="fn">is_ok</span>() {
+            <span class="cm">// debounce: editores salvam várias vezes seguidas</span>
+            <span class="kw">while</span> event_rx.<span class="fn">recv_timeout</span>(<span class="ty">Duration</span>::<span class="fn">from_millis</span>(<span class="nu">300</span>)).<span class="fn">is_ok</span>() {}
+
+            <span class="kw">if</span> <span class="kw">let</span> <span class="ty">Ok</span>(config) = <span class="fn">carregar</span>(&amp;caminho) {
+                <span class="kw">let</span> _ = tx.<span class="fn">send</span>(<span class="ty">Evento</span>::<span class="ty">ConfigAtualizada</span>(config));
+            } <span class="kw">else</span> {
+                <span class="cm">// config quebrada: logue e MANTENHA a anterior rodando</span>
+            }
+        }
+    });
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <div class="refs">
+      <ul>
+        <li><a href="https://serde.rs/examples.html">serde.rs — examples</a> — todos os atributos (<code>default</code>, <code>deny_unknown_fields</code>, <code>rename</code>…)</li>
+        <li><a href="https://docs.rs/notify">docs.rs/notify</a> — tem exemplo completo de watcher no topo da página</li>
+        <li><a href="https://docs.rs/anyhow">docs.rs/anyhow</a> — <code>context</code>/<code>bail</code> do capítulo de erros</li>
+      </ul>
+    </div>
+
+    <h2>Exemplo 13 — IPC: unix socket + CLI</h2>
+<pre><code><span class="kw">use</span> std::io::{<span class="ty">BufRead</span>, <span class="ty">BufReader</span>, <span class="ty">Write</span>};
+<span class="kw">use</span> std::os::unix::net::<span class="ty">UnixListener</span>;
+<span class="kw">use</span> std::path::<span class="ty">Path</span>;
+<span class="kw">use</span> std::sync::mpsc::<span class="ty">Sender</span>;
+
+<span class="cm">// protocolo mínimo: 1 comando por linha, 1 resposta por linha</span>
+<span class="kw">pub</span> <span class="kw">fn</span> <span class="fn">servir</span>(sock_path: &amp;<span class="ty">Path</span>, tx: <span class="ty">Sender</span>&lt;<span class="ty">Comando</span>&gt;) -&gt; <span class="ty">Result</span>&lt;(), <span class="ty">Box</span>&lt;<span class="kw">dyn</span> std::error::<span class="ty">Error</span>&gt;&gt; {
+    <span class="kw">let</span> _ = std::fs::<span class="fn">remove_file</span>(sock_path);    <span class="cm">// sobra de execução anterior</span>
+    <span class="kw">let</span> listener = <span class="ty">UnixListener</span>::<span class="fn">bind</span>(sock_path)?;
+
+    <span class="kw">for</span> stream <span class="kw">in</span> listener.<span class="fn">incoming</span>() {
+        <span class="kw">let</span> <span class="kw">mut</span> stream = stream?;
+        <span class="kw">let</span> <span class="kw">mut</span> reader = <span class="ty">BufReader</span>::<span class="fn">new</span>(stream.<span class="fn">try_clone</span>()?);
+        <span class="kw">let</span> <span class="kw">mut</span> linha = <span class="ty">String</span>::<span class="fn">new</span>();
+        reader.<span class="fn">read_line</span>(&amp;<span class="kw">mut</span> linha)?;
+
+        <span class="kw">match</span> linha.<span class="fn">trim</span>() {
+            <span class="st">"reload"</span> =&gt; { tx.<span class="fn">send</span>(<span class="ty">Comando</span>::<span class="ty">Reload</span>)?; stream.<span class="fn">write_all</span>(b<span class="st">"ok\n"</span>)?; }
+            <span class="st">"toggle-launcher"</span> =&gt; { tx.<span class="fn">send</span>(<span class="ty">Comando</span>::<span class="ty">ToggleLauncher</span>)?; stream.<span class="fn">write_all</span>(b<span class="st">"ok\n"</span>)?; }
+            <span class="st">"lock"</span> =&gt; { tx.<span class="fn">send</span>(<span class="ty">Comando</span>::<span class="ty">Lock</span>)?; stream.<span class="fn">write_all</span>(b<span class="st">"ok\n"</span>)?; }
+            <span class="st">"quit"</span> =&gt; { tx.<span class="fn">send</span>(<span class="ty">Comando</span>::<span class="ty">Quit</span>)?; stream.<span class="fn">write_all</span>(b<span class="st">"bye\n"</span>)?; }
+            outro =&gt; { stream.<span class="fn">write_all</span>(<span class="ma">format!</span>(<span class="st">"erro: '{outro}'\n"</span>).<span class="fn">as_bytes</span>())?; }
+        }
+    }
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <p>E o CLI que controla o shell — um segundo binário no mesmo projeto:</p>
+<pre><code><span class="cm">// src/bin/meushell-cli.rs (cargo compila os dois)</span>
+<span class="kw">use</span> std::io::{<span class="ty">BufRead</span>, <span class="ty">BufReader</span>, <span class="ty">Write</span>};
+<span class="kw">use</span> std::os::unix::net::<span class="ty">UnixStream</span>;
+
+<span class="kw">fn</span> <span class="fn">main</span>() -&gt; <span class="ty">Result</span>&lt;(), <span class="ty">Box</span>&lt;<span class="kw">dyn</span> std::error::<span class="ty">Error</span>&gt;&gt; {
+    <span class="kw">let</span> cmd = std::env::<span class="fn">args</span>().<span class="fn">nth</span>(<span class="nu">1</span>).<span class="fn">expect</span>(<span class="st">"uso: meushell-cli &lt;comando&gt;"</span>);
+    <span class="kw">let</span> dir = std::env::<span class="fn">var</span>(<span class="st">"XDG_RUNTIME_DIR"</span>)?;
+    <span class="kw">let</span> <span class="kw">mut</span> stream = <span class="ty">UnixStream</span>::<span class="fn">connect</span>(<span class="ma">format!</span>(<span class="st">"{dir}/meushell.sock"</span>))?;
+
+    <span class="ma">writeln!</span>(stream, <span class="st">"{cmd}"</span>)?;
+    <span class="kw">let</span> <span class="kw">mut</span> resposta = <span class="ty">String</span>::<span class="fn">new</span>();
+    <span class="ty">BufReader</span>::<span class="fn">new</span>(stream).<span class="fn">read_line</span>(&amp;<span class="kw">mut</span> resposta)?;
+    <span class="ma">println!</span>(<span class="st">"{}"</span>, resposta.<span class="fn">trim</span>());
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <ul class="topics">
+      <li>O socket em <code>$XDG_RUNTIME_DIR/meushell.sock</code> herda as permissões do diretório — só o seu usuário conecta (segurança de graça).</li>
+      <li><code>tx.send(...)</code> joga o comando no event bus — o IPC é só mais um produtor, igual ao Wayland e ao D-Bus.</li>
+      <li>Upgrade natural: JSON-RPC (crate <code>serde_json</code>) para respostas ricas (<code>query state</code>), ou a versão async com <code>tokio::net::UnixListener</code>.</li>
+    </ul>
+    <div class="refs">
+      <ul>
+        <li><a href="https://man7.org/linux/man-pages/man7/unix.7.html">unix(7)</a> — Unix domain sockets</li>
+        <li><a href="https://docs.rs/tokio/latest/tokio/net/struct.UnixListener.html">tokio::net::UnixListener</a> — versão async do mesmo listener</li>
+        <li>Para protocolo decente: <a href="https://www.jsonrpc.org/specification">JSON-RPC 2.0 spec</a> + <code>serde_json</code></li>
+      </ul>
+    </div>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://serde.rs">serde.rs</a></li>
+      <li><a href="https://docs.rs/notify">notify (file watching)</a></li>
+      <li><a href="https://man7.org/linux/man-pages/man7/unix.7.html">unix(7) — Unix domain sockets</a></li>
+      <li><a href="https://github.com/flamegraph-rs/flamegraph">cargo-flamegraph</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="componentes.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Componentes do shell</span>
+  </a>
+  <a class="next" href="roadmap.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Roadmap de implementação</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

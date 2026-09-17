@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Wayland: fundamentos e Rust</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 01/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>Wayland: fundamentos e Rust</h1>
+    <p class="lead">Antes de usar bibliotecas de alto nível, entenda o protocolo. O shell é um <strong>cliente Wayland</strong> — o compositor (Sway/Hyprland/Niri) é o servidor.</p>
+
+    <h2>Fundamentos do protocolo</h2>
+    <p>Pesquise:</p>
+    <ul class="topics">
+      <li>Arquitetura do Wayland</li>
+      <li>Client vs Compositor</li>
+      <li>Wayland Protocol</li>
+      <li>Globals</li>
+      <li>Registry</li>
+      <li>Object lifecycle</li>
+      <li>Proxy objects</li>
+      <li>Requests</li>
+      <li>Events</li>
+      <li>Event queue</li>
+      <li>Roundtrip</li>
+    </ul>
+
+    <h2>Os objetos core</h2>
+    <table>
+      <tr><th>Objeto</th><th>Papel</th></tr>
+      <tr><td><code>wl_display</code></td><td>a conexão com o compositor — ponto de entrada</td></tr>
+      <tr><td><code>wl_registry</code></td><td>lista os "globals" que o compositor oferece</td></tr>
+      <tr><td><code>wl_compositor</code></td><td>fábrica de surfaces</td></tr>
+      <tr><td><code>wl_surface</code></td><td>a área retangular onde você desenha — a base de tudo</td></tr>
+      <tr><td><code>wl_shm</code></td><td>buffers de memória compartilhada (render por CPU)</td></tr>
+      <tr><td><code>wl_seat</code></td><td>teclado + pointer + touch</td></tr>
+      <tr><td><code>wl_output</code></td><td>um monitor (geometria, scale, refresh)</td></tr>
+    </table>
+
+    <h2>Mecânicas essenciais</h2>
+    <ul class="topics">
+      <li>Frame callbacks — o compositor avisa quando é hora de desenhar o próximo frame</li>
+      <li>Configure events — o compositor propõe tamanho/estado; você responde</li>
+      <li>Commit — você "publica" o estado da surface (double buffering do protocolo)</li>
+    </ul>
+    <p>Fluxo conceitual que você precisa entender:</p>
+<pre class="diagram"><code>conectar ao compositor
+        ↓
+obter registry
+        ↓
+descobrir globals
+        ↓
+obter interfaces necessárias
+        ↓
+criar surface
+        ↓
+receber configure
+        ↓
+renderizar
+        ↓
+commit
+        ↓
+aguardar frame callback
+        ↓
+renderizar novamente quando necessário</code></pre>
+
+    <h2>Rust + Wayland</h2>
+    <p>Pesquise principalmente:</p>
+    <ul class="topics">
+      <li><a href="https://docs.rs/wayland-client"><code>wayland-client</code></a> — a API cliente em Rust</li>
+      <li><a href="https://docs.rs/wayland-backend"><code>wayland-backend</code></a> — a camada de baixo nível por trás</li>
+      <li><a href="https://docs.rs/wayland-protocols"><code>wayland-protocols</code></a> — extensões do protocolo (inclui layer-shell)</li>
+      <li>Geração de bindings de protocolos (XML → código Rust)</li>
+      <li>Dispatch — como seus handlers recebem eventos</li>
+      <li>EventQueue</li>
+      <li>Registry / GlobalManager</li>
+      <li>Proxy objects</li>
+    </ul>
+    <p>Você precisa entender como a API Rust transforma a pilha:</p>
+<pre class="diagram"><code>protocolo Wayland
+        ↓
+XML do protocolo
+        ↓
+bindings Rust
+        ↓
+interfaces
+        ↓
+requests/events</code></pre>
+
+    <h2>Exemplo 1 — primeiro cliente Wayland</h2>
+    <p>Um cliente mínimo e <strong>compilável</strong> que conecta ao seu compositor, descobre os globals e cria uma surface. É a anatomia de todo cliente Wayland em Rust — a barra do shell nasce daqui.</p>
+<pre><code><span class="cm">// Cargo.toml:</span>
+<span class="cm">// [dependencies]</span>
+<span class="cm">// wayland-client = "0.31"</span>
+
+<span class="kw">use</span> wayland_client::{
+    protocol::{wl_compositor, wl_registry, wl_surface},
+    <span class="ty">Connection</span>, <span class="ty">Dispatch</span>, <span class="ty">QueueHandle</span>,
+};
+
+<span class="cm">// 1. O estado da aplicação — os eventos vão mutá-lo</span>
+<span class="kw">struct</span> <span class="ty">App</span> {
+    running: <span class="ty">bool</span>,
+    surface: <span class="ty">Option</span>&lt;wl_surface::<span class="ty">WlSurface</span>&gt;,
+}
+
+<span class="cm">// 2. Handler do registry: onde os globals são descobertos</span>
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;wl_registry::<span class="ty">WlRegistry</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(
+        state: &amp;<span class="kw">mut</span> <span class="kw">Self</span>,
+        registry: &amp;wl_registry::<span class="ty">WlRegistry</span>,
+        event: wl_registry::<span class="ty">Event</span>,
+        _dados: &amp;(),
+        _conn: &amp;<span class="ty">Connection</span>,
+        qh: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;,
+    ) {
+        <span class="cm">// o compositor anuncia cada global com nome e versão:</span>
+        <span class="kw">if</span> <span class="kw">let</span> wl_registry::<span class="ty">Event</span>::<span class="ty">Global</span> { name, interface, version } = event {
+            <span class="ma">println!</span>(<span class="st">"global: {interface} v{version}"</span>);
+
+            <span class="kw">if</span> interface == <span class="st">"wl_compositor"</span> {
+                <span class="cm">// 3. bind: cria o proxy da interface que interessa</span>
+                <span class="kw">let</span> compositor = registry.bind::&lt;wl_compositor::<span class="ty">WlCompositor</span>, _, _&gt;(
+                    name,
+                    version.<span class="fn">min</span>(<span class="nu">4</span>),
+                    qh,
+                    (),
+                );
+                <span class="cm">// 4. cria a surface — a área onde desenharemos depois</span>
+                state.surface = <span class="ty">Some</span>(compositor.<span class="fn">create_surface</span>(qh));
+            }
+        }
+    }
+}
+
+<span class="cm">// 5. TODO proxy precisa de um impl Dispatch — mesmo sem eventos</span>
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;wl_compositor::<span class="ty">WlCompositor</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(_s: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, _c: &amp;wl_compositor::<span class="ty">WlCompositor</span>, _e: wl_compositor::<span class="ty">Event</span>,
+             _d: &amp;(), _conn: &amp;<span class="ty">Connection</span>, _qh: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {}
+}
+
+<span class="kw">impl</span> <span class="ty">Dispatch</span>&lt;wl_surface::<span class="ty">WlSurface</span>, ()&gt; <span class="kw">for</span> <span class="ty">App</span> {
+    <span class="kw">fn</span> <span class="fn">event</span>(_s: &amp;<span class="kw">mut</span> <span class="kw">Self</span>, _surf: &amp;wl_surface::<span class="ty">WlSurface</span>, _e: wl_surface::<span class="ty">Event</span>,
+             _d: &amp;(), _conn: &amp;<span class="ty">Connection</span>, _qh: &amp;<span class="ty">QueueHandle</span>&lt;<span class="kw">Self</span>&gt;) {}
+}
+
+<span class="kw">fn</span> <span class="fn">main</span>() -&gt; <span class="ty">Result</span>&lt;(), <span class="ty">Box</span>&lt;<span class="kw">dyn</span> std::error::<span class="ty">Error</span>&gt;&gt; {
+    <span class="cm">// conecta via WAYLAND_DISPLAY (default: wayland-0) = wl_display</span>
+    <span class="kw">let</span> conn = <span class="ty">Connection</span>::<span class="fn">connect_to_env</span>()?;
+
+    <span class="cm">// fila de eventos: tudo que o compositor mandar cai aqui</span>
+    <span class="kw">let</span> <span class="kw">mut</span> event_queue = conn.<span class="fn">new_event_queue</span>();
+    <span class="kw">let</span> qh = event_queue.<span class="fn">handle</span>();
+
+    <span class="cm">// primeiro request: pegar o registry para descobrir globals</span>
+    <span class="kw">let</span> _registry = conn.<span class="fn">display</span>().<span class="fn">get_registry</span>(&amp;qh, ());
+
+    <span class="kw">let</span> <span class="kw">mut</span> app = <span class="ty">App</span> { running: <span class="kw">true</span>, surface: <span class="ty">None</span> };
+    event_queue.<span class="fn">roundtrip</span>(&amp;<span class="kw">mut</span> app)?;      <span class="cm">// processa o estado inicial</span>
+
+    <span class="ma">println!</span>(<span class="st">"surface criada? {}"</span>, app.surface.<span class="fn">is_some</span>());
+
+    <span class="cm">// o loop de eventos — dorme quando não há nada (sem busy loop!)</span>
+    <span class="kw">while</span> app.running {
+        event_queue.<span class="fn">blocking_dispatch</span>(&amp;<span class="kw">mut</span> app)?;
+    }
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <p>O que está acontecendo, mapeado para os conceitos do protocolo:</p>
+    <ul class="topics">
+      <li><code>Connection::connect_to_env()</code> → <code>wl_display</code>: o socket do compositor (rode num Sway/Hyprland/Niri real).</li>
+      <li><code>get_registry()</code> → <code>wl_registry</code>: o compositor <strong>anuncia</strong> cada global como um evento — por isso a descoberta é um <code>impl Dispatch</code>, não uma função de retorno.</li>
+      <li><code>registry.bind()</code> → cria o <strong>proxy</strong> da interface; a partir daí você chama <em>requests</em> (como <code>create_surface</code>) nele.</li>
+      <li><code>Dispatch</code> é o receptor de <em>events</em>: um método por tipo de objeto, <code>match</code> no enum de eventos.</li>
+      <li><code>roundtrip()</code> sincroniza (garante que tudo pendente foi processado); <code>blocking_dispatch()</code> é o loop que dorme até chegar evento — exatamente o modelo "event → reage → espera" da página de <a href="infra.html">performance</a>.</li>
+      <li>Repare nos conceitos da Parte 1: <code>Result</code>/<code>?</code>, <code>Option</code> no estado, generics com trait bounds (<code>Dispatch&lt;I, ()&gt; for App</code>).</li>
+    </ul>
+    <div class="refs">
+      <p>Antes de escrever código, rode <strong><code>wayland-info</code></strong> (pacote <code>wayland-utils</code>) no seu sessão: ele lista os globals que o SEU compositor oferece. Se um protocolo não aparece lá, seu shell não pode usá-lo.</p>
+      <ul>
+        <li><a href="https://docs.rs/wayland-client">docs.rs/wayland-client</a> — API exata da versão que você usa (a fonte da verdade)</li>
+        <li><a href="https://github.com/Smithay/wayland-rs/tree/master/wayland-client/examples">exemplos oficiais no repositório wayland-rs</a></li>
+        <li><a href="https://wayland-book.com">The Wayland Book</a> — conceitos do protocolo em texto</li>
+        <li><a href="https://wayland.app/protocols/wayland">spec navegável do protocolo core</a> — cada request/event documentado</li>
+      </ul>
+    </div>
+
+    <div class="warn">
+      <p><strong>Não comece pelo Smithay.</strong> Smithay é um framework para construir <em>compositores</em>. Para um desktop shell sobre Sway/Hyprland/Niri, você está construindo um <strong>cliente Wayland</strong> — o caminho é <code>wayland-client</code> + layer-shell.</p>
+    </div>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://wayland.freedesktop.org/docs/html/">Wayland Documentation</a></li>
+      <li><a href="https://wayland.app/protocols/">Wayland Protocols (explorável)</a></li>
+      <li><a href="https://docs.rs/wayland-client">wayland-client no docs.rs</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-09-project.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Módulos, crates, logging e testes</span>
+  </a>
+  <a class="next" href="layer-shell.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Layer Shell</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

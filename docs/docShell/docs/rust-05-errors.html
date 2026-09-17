@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 05 — Option, Result e o operador ?</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 05/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Tratamento de erros: Option, Result e o operador ?</h1>
+    <p class="lead">Java e JS usam exceptions. Rust <strong>não tem exceptions</strong>: erros são valores de retorno, e o sistema de tipos te <strong>obriga</strong> a lidar com eles. Só existe o <code>?</code> entre você e o erro.</p>
+
+    <h2>Option&lt;T&gt; — a morte do null</h2>
+    <p>Não existe null em Rust. Ausência de valor é um tipo:</p>
+<pre><code><span class="kw">enum</span> <span class="ty">Option</span>&lt;<span class="ty">T</span>&gt; {
+    <span class="ty">Some</span>(<span class="ty">T</span>),   <span class="cm">// tem valor</span>
+    <span class="ty">None</span>,      <span class="cm">// não tem</span>
+}</code></pre>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="ty">String</span> nome = mapa.<span class="fn">get</span>(<span class="st">"chave"</span>);  <span class="cm">// pode ser null!</span>
+<span class="kw">if</span> (nome != null) { ... }
+<span class="cm">// Optional existe, mas é opcional</span>
+<span class="cm">// NullPointerException à distância</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">let</span> nome = mapa.<span class="fn">get</span>(<span class="st">"chave"</span>);     <span class="cm">// Option&lt;&amp;str&gt;</span>
+<span class="kw">match</span> nome {
+    <span class="ty">Some</span>(n) =&gt; <span class="ma">println!</span>(<span class="st">"{n}"</span>),
+    <span class="ty">None</span> =&gt; <span class="ma">println!</span>(<span class="st">"não achou"</span>),
+}
+<span class="cm">// impossível esquecer: o compilador cobra</span></code></pre>
+      </div>
+    </div>
+    <p>Ferramentas do dia a dia (equivalentes ao <code>Optional</code> de Java):</p>
+<pre><code><span class="kw">let</span> cfg = mapa.<span class="fn">get</span>(<span class="st">"tema"</span>);
+
+<span class="kw">let</span> tema = cfg.<span class="fn">unwrap_or</span>(<span class="st">"escuro"</span>);              <span class="cm">// com fallback</span>
+<span class="kw">let</span> tema = cfg.<span class="fn">expect</span>(<span class="st">"config obrigatória"</span>);     <span class="cm">// panica com mensagem (use pouco)</span>
+<span class="kw">if</span> <span class="kw">let</span> <span class="ty">Some</span>(t) = cfg { ... }                     <span class="cm">// só o caso Some</span>
+cfg.<span class="fn">map</span>(|t| t.<span class="fn">to_uppercase</span>());                   <span class="cm">// ≈ Optional.map</span>
+cfg.<span class="fn">and_then</span>(validar);                           <span class="cm">// ≈ Optional.flatMap</span></code></pre>
+
+    <h2>Result&lt;T, E&gt; — exceptions como valores</h2>
+<pre><code><span class="kw">enum</span> <span class="ty">Result</span>&lt;<span class="ty">T</span>, <span class="ty">E</span>&gt; {
+    <span class="ty">Ok</span>(<span class="ty">T</span>),   <span class="cm">// sucesso, com o valor</span>
+    <span class="ty">Err</span>(<span class="ty">E</span>),  <span class="cm">// falha, com o erro</span>
+}</code></pre>
+    <table>
+      <tr><th>Java (exceptions)</th><th>Rust (Result)</th></tr>
+      <tr><td><code>throw new IOException(...)</code></td><td><code>return Err(e.into())</code></td></tr>
+      <tr><td><code>catch (IOException e) { ... }</code></td><td><code>match r { Ok(v) =&gt; ..., Err(e) =&gt; ... }</code></td></tr>
+      <tr><td>checked exception na assinatura</td><td><code>-&gt; Result&lt;T, MeuErro&gt;</code> — e aqui é enforced de verdade</td></tr>
+      <tr><td>exception não tratada explode em runtime</td><td>Result ignorado gera <em>warning</em> e o erro propaga explicitamente</td></tr>
+    </table>
+
+    <h2>O operador <code>?</code> — propagação de erro</h2>
+    <p>O <code>?</code> significa: "se for <code>Err</code>, retorne agora o erro; se for <code>Ok</code>, extraia o valor e siga".</p>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="ty">String</span> <span class="fn">lerConfig</span>() <span class="kw">throws</span> <span class="ty">IOException</span> {
+    <span class="kw">var</span> path = <span class="ty">Path</span>.<span class="fn">of</span>(<span class="st">"app.toml"</span>);
+    <span class="kw">var</span> conteudo = <span class="ty">Files</span>.<span class="fn">readString</span>(path);
+    <span class="kw">return</span> conteudo.<span class="fn">trim</span>();
+}
+<span class="cm">// exceção explode para cima</span>
+<span class="cm">// invisível no corpo do método</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">fn</span> <span class="fn">ler_config</span>() -&gt; <span class="ty">Result</span>&lt;<span class="ty">String</span>, std::io::<span class="ty">Error</span>&gt; {
+    <span class="kw">let</span> conteudo = std::fs::<span class="fn">read_to_string</span>(<span class="st">"app.toml"</span>)?;
+    <span class="ty">Ok</span>(conteudo.<span class="fn">trim</span>().<span class="fn">to_string</span>())
+}
+<span class="cm">// cada `?` pode abortar a função</span>
+<span class="cm">// com o erro — explícito e rastreável</span></code></pre>
+      </div>
+    </div>
+    <p>Um <code>main</code> também pode retornar <code>Result</code>:</p>
+<pre><code><span class="kw">fn</span> <span class="fn">main</span>() -&gt; <span class="ty">Result</span>&lt;(), <span class="ty">Box</span>&lt;<span class="kw">dyn</span> std::error::<span class="ty">Error</span>&gt;&gt; {
+    <span class="kw">let</span> cfg = std::fs::<span class="fn">read_to_string</span>(<span class="st">"app.toml"</span>)?;
+    <span class="ma">println!</span>(<span class="st">"{cfg}"</span>);
+    <span class="ty">Ok</span>(())
+}</code></pre>
+
+    <h2>panic! — o "Error" de Rust</h2>
+    <p><code>panic!</code> aborta o programa (como uma <code>RuntimeException</code> não capturada). Regras:</p>
+    <ul class="topics">
+      <li>Use para <strong>bugs</strong> e invariantes violadas — nunca para fluxo esperado (arquivo pode não existir? então é <code>Result</code>).</li>
+      <li><code>.unwrap()</code> panica se for <code>Err</code>/<code>None</code> — só em protótipos e testes.</li>
+      <li><code>.expect("msg")</code> — igual, mas explica <em>por quê</em>. Aceitável quando você prova que não falha.</li>
+    </ul>
+
+    <h2>thiserror — erros de biblioteca/módulo</h2>
+    <p>Quando você define seus próprios erros, o crate <a href="https://docs.rs/thiserror">thiserror</a> elimina o boilerplate:</p>
+<pre><code><span class="kw">use</span> thiserror::<span class="ty">Error</span>;
+
+<span class="at">#[derive(Debug, Error)]</span>
+<span class="kw">pub</span> <span class="kw">enum</span> <span class="ty">ShellError</span> {
+    <span class="at">#[error("config inválida: {0}")]</span>
+    <span class="ty">Config</span>(<span class="at">#[from]</span> toml::de::<span class="ty">Error</span>),
+
+    <span class="at">#[error("falha de E/S: {0}")]</span>
+    <span class="ty">Io</span>(<span class="at">#[from]</span> std::io::<span class="ty">Error</span>),
+
+    <span class="at">#[error("canal {canal} não encontrado")]</span>
+    <span class="ty">Canal</span> { canal: <span class="ty">String</span> },
+}</code></pre>
+    <p>Equivalente a criar classes de exception em Java — <code>#[from]</code> permite que o <code>?</code> converta erros de outros tipos automaticamente (o <code>try-with-resources</code> de conversão que o Java nunca teve).</p>
+
+    <h2>anyhow — erros de aplicação</h2>
+    <p>No nível da aplicação (o <code>main</code>), onde você só quer logar o erro e sair, o crate <a href="https://docs.rs/anyhow">anyhow</a> dá um erro "qualquer coisa" com contexto:</p>
+<pre><code><span class="kw">use</span> anyhow::{<span class="ty">Context</span>, <span class="ty">Result</span>};
+
+<span class="kw">fn</span> <span class="fn">iniciar</span>() -&gt; <span class="ty">Result</span>&lt;()&gt; {
+    <span class="kw">let</span> cfg = std::fs::<span class="fn">read_to_string</span>(<span class="st">"shell.toml"</span>)
+        .<span class="fn">context</span>(<span class="st">"lendo shell.toml"</span>)?;       <span class="cm">// adiciona contexto ao erro</span>
+    <span class="kw">let</span> config = <span class="fn">parse</span>(&amp;cfg)
+        .<span class="fn">context</span>(<span class="st">"parseando shell.toml"</span>)?;
+    <span class="cm">// ...</span>
+    <span class="ty">Ok</span>(())
+}</code></pre>
+    <div class="tip">
+      <p>Regra de bolso para o projeto do shell: <strong>thiserror</strong> em módulos/crates (erros tipados que os chamadores podem tratar), <strong>anyhow</strong> no binário principal (onde erro = log e sair). É o fluxo idiomático do ecossistema.</p>
+    </div>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Escreva <code>fn dividir(a: f64, b: f64) -&gt; Result&lt;f64, String&gt;</code> retornando <code>Err</code> para divisão por zero; use <code>?</code> numa função que encadeia três divisões.</li>
+      <li>Leia um arquivo inexistente com <code>std::fs::read_to_string</code> e trate com <code>match</code>; depois refatore usando <code>?</code> + <code>main -&gt; Result</code>.</li>
+      <li>Crie um <code>enum ErroParse</code> com thiserror e escreva <code>fn parse_idade(s: &amp;str) -&gt; Result&lt;u8, ErroParse&gt;</code> convertendo o erro de <code>parse::&lt;u8&gt;</code> com <code>#[from]</code>.</li>
+      <li>Use <code>.context()</code> de anyhow nas chamadas da função anterior.</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch09-00-error-handling.html">The Book — Error Handling</a></li>
+      <li><a href="https://blog.burntsushi.net/rust-error-handling/">Error Handling in Rust — BurntSushi</a> (leitura clássica e aprofundada)</li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-04-types.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Structs, enums, traits e pattern matching</span>
+  </a>
+  <a class="next" href="rust-06-collections.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Coleções, closures e iterators</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

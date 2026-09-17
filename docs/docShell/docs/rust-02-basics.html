@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rust 02 — Fundamentos: variáveis, tipos e funções</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 1 · rust do zero · 02/09</span>
+</header>
+
+<main>
+  <article>
+    <h1>Fundamentos: variáveis, tipos e funções</h1>
+    <p class="lead">A sintaxe é familiar, mas a <em>semântica</em> tem diferenças que fazem diferença. Foco nas que mais confundem quem vem de Java/JS.</p>
+
+    <h2>Variáveis: imutáveis por padrão</h2>
+    <p>Em Rust, toda variável é imutável a menos que você escreva <code>mut</code>. É o inverso de Java/JS.</p>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="ty">int</span> x = <span class="nu">5</span>;          <span class="cm">// mutável</span>
+<span class="kw">final</span> <span class="ty">int</span> y = <span class="nu">10</span>;   <span class="cm">// imutável</span>
+x = <span class="nu">6</span>;              <span class="cm">// ok</span>
+y = <span class="nu">11</span>;             <span class="cm">// erro de compilação</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">let</span> x = <span class="nu">5</span>;          <span class="cm">// imutável</span>
+<span class="kw">let</span> <span class="kw">mut</span> y = <span class="nu">10</span>;     <span class="cm">// mutável</span>
+x = <span class="nu">6</span>;              <span class="cm">// erro de compilação</span>
+y = <span class="nu">11</span>;             <span class="cm">// ok</span></code></pre>
+      </div>
+    </div>
+    <div class="note">
+      <p><code>const</code> em JS só impede <em>reatribuição</em> do binding (o objeto interno continua mutável). <code>let</code> sem <code>mut</code> em Rust impede <strong>qualquer</strong> mutação através daquele binding. É o <code>final</code> de Java, mas como padrão da linguagem e verificado a fundo pelo compilador.</p>
+    </div>
+
+    <h2>Shadowing</h2>
+    <p>Você pode declarar uma nova variável com o <strong>mesmo nome</strong>, substituindo a anterior — inclusive mudando o tipo:</p>
+<pre><code><span class="kw">let</span> espacos = <span class="st">"   "</span>;
+<span class="kw">let</span> espacos = espacos.<span class="fn">len</span>();   <span class="cm">// agora é um número (usize)</span>
+
+<span class="kw">let</span> idade = <span class="st">"30"</span>;
+<span class="kw">let</span> idade: <span class="ty">u32</span> = idade.<span class="fn">parse</span>().<span class="fn">expect</span>(<span class="st">"não é número"</span>);  <span class="cm">// str -&gt; u32</span></code></pre>
+    <p>Em Java isso não compila no mesmo escopo; em Rust é idiomático para transformações em sequência (conversões de tipo, parsing), evitando nomes como <code>idadeStr</code>, <code>idadeNum</code>.</p>
+
+    <h2>Tipos primitivos</h2>
+    <table>
+      <tr><th>Rust</th><th>Java</th><th>JS</th><th>Observação</th></tr>
+      <tr><td><code>i32</code> (default)</td><td><code>int</code></td><td><code>Number</code></td><td>32 bits, com sinal</td></tr>
+      <tr><td><code>i8</code> <code>i16</code> <code>i64</code> <code>i128</code></td><td><code>byte</code> <code>short</code> <code>long</code> —</td><td>—</td><td>todos existem, com tamanho explícito</td></tr>
+      <tr><td><code>u8</code> <code>u16</code> <code>u32</code> <code>u64</code> <code>u128</code></td><td>— (só <code>char</code>)</td><td>—</td><td>sem sinal; JS/Java não têm</td></tr>
+      <tr><td><code>usize</code> / <code>isize</code></td><td>—</td><td>—</td><td>tamanho de ponteiro; usado em índices e <code>.len()</code></td></tr>
+      <tr><td><code>f64</code> (default), <code>f32</code></td><td><code>double</code>, <code>float</code></td><td><code>Number</code></td><td>mesmo IEEE 754</td></tr>
+      <tr><td><code>bool</code></td><td><code>boolean</code></td><td><code>boolean</code></td><td>sem truthiness: <code>if 0 {}</code> não compila</td></tr>
+      <tr><td><code>char</code></td><td><code>char</code></td><td>—</td><td>4 bytes, unicode; aspas simples <code>'a'</code></td></tr>
+      <tr><td><code>&amp;str</code> / <code>String</code></td><td><code>String</code></td><td><code>string</code></td><td>o grande detalhe — ver abaixo</td></tr>
+      <tr><td><code>(i32, f64)</code> tupla</td><td>record / classe</td><td>array</td><td>heterogênea, tamanho fixo</td></tr>
+      <tr><td><code>[T; N]</code> array</td><td><code>T[]</code></td><td>array</td><td>fixo, vive na stack; o vetor dinâmico é <code>Vec&lt;T&gt;</code></td></tr>
+    </table>
+    <div class="note">
+      <p><strong>Overflow de inteiro:</strong> em modo debug (<code>cargo run</code>), overflow <strong>panica</strong> (o programa aborta com erro). Em modo release, faz wrap (comporta-se como Java). Isso evita bugs silenciosos durante o desenvolvimento.</p>
+    </div>
+
+    <h2>Strings: a primeira pegadinha</h2>
+    <p>Rust tem dois tipos de string, e entender a diferença agora poupa muita dor:</p>
+<pre><code><span class="kw">let</span> s1: &amp;<span class="ty">str</span>   = <span class="st">"texto literal"</span>;       <span class="cm">// view imutável para dados em memória</span>
+<span class="kw">let</span> s2: <span class="ty">String</span> = <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"texto"</span>);  <span class="cm">// string alocada no heap, crescível</span>
+
+<span class="kw">let</span> <span class="kw">mut</span> s3 = <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"ola"</span>);
+s3.<span class="fn">push_str</span>(<span class="st">", mundo"</span>);                  <span class="cm">// só String cresce</span>
+
+<span class="cm">// conversões frequentes:</span>
+<span class="kw">let</span> s4: &amp;<span class="ty">str</span> = &amp;s3;                     <span class="cm">// String -&gt; &amp;str (barato, sem cópia)</span>
+<span class="kw">let</span> s5: <span class="ty">String</span> = s1.<span class="fn">to_string</span>();         <span class="cm">// &amp;str -&gt; String (aloca)</span></code></pre>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="ty">String</span> s = <span class="st">"ola"</span>;          <span class="cm">// imutável no heap</span>
+<span class="ty">StringBuilder</span> sb = ...;    <span class="cm">// crescível</span>
+<span class="cm">// uma só mentalidade: tudo é objeto referenciado</span>
+<span class="cm">// pelo GC</span></code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">let</span> s = <span class="st">"ola"</span>;             <span class="cm">// &amp;str: emprestado</span>
+<span class="kw">let</span> <span class="kw">mut</span> s = <span class="ty">String</span>::<span class="fn">from</span>(<span class="st">"ola"</span>);  <span class="cm">// dono do heap</span>
+<span class="cm">// escolha depende de quem POSSUI os</span>
+<span class="cm">// dados — ver capítulo de ownership</span></code></pre>
+      </div>
+    </div>
+    <p>Regra prática de iniciante: literais e parâmetros de leitura usam <code>&amp;str</code>; strings que você constrói/modifica usam <code>String</code>.</p>
+
+    <h2>Funções</h2>
+    <div class="compare">
+      <div class="compare-col">
+        <span class="compare-tag java">Java</span>
+<pre><code><span class="kw">static</span> <span class="ty">int</span> <span class="fn">soma</span>(<span class="ty">int</span> a, <span class="ty">int</span> b) {
+    <span class="kw">return</span> a + b;
+}</code></pre>
+      </div>
+      <div class="compare-col">
+        <span class="compare-tag rust">Rust</span>
+<pre><code><span class="kw">fn</span> <span class="fn">soma</span>(a: <span class="ty">i32</span>, b: <span class="ty">i32</span>) -&gt; <span class="ty">i32</span> {
+    a + b            <span class="cm">// sem `return` nem `;`</span>
+}</code></pre>
+      </div>
+    </div>
+    <ul>
+      <li>Tipos dos parâmetros e do retorno são <strong>obrigatórios</strong>.</li>
+      <li>A última expressão (sem <code>;</code>) é o valor de retorno. Colocar <code>;</code> ali é <em>a</em> pegadinha clássica: o compilador avisará "expected <code>i32</code>, found <code>()</code>".</li>
+      <li>Convenção: <code>snake_case</code> para funções e variáveis.</li>
+    </ul>
+
+    <h2>Controle de fluxo: tudo é expressão</h2>
+    <p>Blocos como <code>if</code> e <code>{}</code> <strong>produzem valores</strong> — sem ternário necessário:</p>
+<pre><code><span class="kw">let</span> n = <span class="kw">if</span> condicao { <span class="nu">5</span> } <span class="kw">else</span> { <span class="nu">10</span> };
+
+<span class="kw">let</span> msg = {
+    <span class="kw">let</span> x = <span class="nu">3</span>;
+    x * x            <span class="cm">// valor do bloco: 9</span>
+};
+
+<span class="cm">// loop pode retornar valor via break:</span>
+<span class="kw">let</span> <span class="kw">mut</span> contador = <span class="nu">0</span>;
+<span class="kw">let</span> resultado = <span class="kw">loop</span> {
+    contador += <span class="nu">1</span>;
+    <span class="kw">if</span> contador == <span class="nu">10</span> {
+        <span class="kw">break</span> contador * <span class="nu">2</span>;    <span class="cm">// loop "retorna" 20</span>
+    }
+};</code></pre>
+    <div class="note">
+      <p><code>if</code> exige <code>bool</code> de verdade — não existe truthiness como em JS. <code>if (valor)</code> não compila; escreva <code>if valor != 0</code>.</p>
+    </div>
+    <p>Loops:</p>
+<pre><code><span class="cm">// for sobre ranges (0..5 = 0,1,2,3,4 | 0..=5 inclui o 5)</span>
+<span class="kw">for</span> i <span class="kw">in</span> <span class="nu">0</span>..<span class="nu">5</span> {
+    <span class="ma">println!</span>(<span class="st">"{i}"</span>);
+}
+
+<span class="cm">// while tradicional</span>
+<span class="kw">let</span> <span class="kw">mut</span> n = <span class="nu">3</span>;
+<span class="kw">while</span> n != <span class="nu">0</span> {
+    n -= <span class="nu">1</span>;
+}</code></pre>
+
+    <h2>Exercícios</h2>
+    <ol>
+      <li>Escreva FizzBuzz de 1 a 100 usando <code>for</code> e <code>if/else if</code> como expressão.</li>
+      <li>Função <code>fn media(valores: &amp;[f64]) -&gt; f64</code> que retorna a média (dica: <code>iter().sum()</code> e <code>.len()</code>).</li>
+      <li>Função <code>fn para_fahrenheit(c: f64) -&gt; f64</code> e o inverso; teste-as no <code>main</code> com shadowing.</li>
+      <li>Use <code>loop</code> + <code>break valor</code> para achar o primeiro quadrado acima de 1000.</li>
+    </ol>
+
+    <h2>Links oficiais</h2>
+    <ul>
+      <li><a href="https://doc.rust-lang.org/book/ch03-00-common-programming-concepts.html">The Book — Common Programming Concepts</a></li>
+      <li><a href="https://doc.rust-lang.org/rust-by-example/">Rust by Example</a></li>
+    </ul>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="rust-01-setup.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Configuração do ambiente e Cargo</span>
+  </a>
+  <a class="next" href="rust-03-ownership.html">
+    <span class="dir">próxima →</span>
+    <span class="title">Ownership, borrowing e lifetimes</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>

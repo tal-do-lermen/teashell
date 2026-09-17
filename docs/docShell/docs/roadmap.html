@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roadmap — Ordem de implementação</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html">Shell Wayland em Rust</a>
+  <span class="crumb">parte 2 · roadmap · 08/08</span>
+</header>
+
+<main>
+  <article>
+    <h1>Roadmap de implementação</h1>
+    <p class="lead">A ordem recomendada para transformar pesquisa em código: 14 fases, do "sei Rust" até shell otimizado. Cada fase usa as páginas anteriores como referência.</p>
+
+    <h2>Fase 1 — Rust</h2>
+    <p>Estude (via <a href="rust-01-setup.html">Parte 1 deste guia</a>):</p>
+    <ul class="topics">
+      <li>ownership</li>
+      <li>concurrency</li>
+      <li>async</li>
+      <li>channels</li>
+      <li>errors</li>
+      <li>filesystem</li>
+      <li>processes</li>
+      <li>logging</li>
+    </ul>
+
+    <h2>Fase 2 — Wayland Client</h2>
+    <p>Estude (<a href="wayland.html">referência</a>):</p>
+    <ul class="topics">
+      <li><code>wayland-client</code></li>
+      <li>registry</li>
+      <li>globals</li>
+      <li>event queue</li>
+      <li>surface</li>
+      <li>configure</li>
+      <li>commit</li>
+      <li>frame callback</li>
+    </ul>
+
+    <h2>Fase 3 — Layer Shell</h2>
+    <p>Implemente conceitualmente (<a href="layer-shell.html">referência</a>):</p>
+    <ul class="topics">
+      <li>surface top</li>
+      <li>anchors</li>
+      <li>exclusive zone</li>
+      <li>output</li>
+      <li>keyboard interaction</li>
+    </ul>
+
+    <h2>Fase 4 — Rendering</h2>
+    <p>Estude e escolha (<a href="rendering-ui.html">referência</a>):</p>
+    <ul class="topics">
+      <li>wgpu</li>
+      <li>Vulkan</li>
+      <li>OpenGL ES</li>
+      <li>Skia</li>
+      <li>Vello</li>
+    </ul>
+    <p>Depois:</p>
+    <ul class="topics">
+      <li>text</li>
+      <li>images</li>
+      <li>textures</li>
+      <li>GPU buffers</li>
+      <li>damage tracking</li>
+    </ul>
+
+    <h2>Fase 5 — Input</h2>
+    <p>Estude (<a href="rendering-ui.html">referência</a>):</p>
+    <ul class="topics">
+      <li>pointer</li>
+      <li>keyboard</li>
+      <li>focus</li>
+      <li>modifiers</li>
+      <li>repeat</li>
+      <li>cursor</li>
+    </ul>
+
+    <h2>Fase 6 — Bar</h2>
+    <p>Comece com:</p>
+    <ul class="topics">
+      <li>relógio</li>
+      <li>workspaces</li>
+      <li>status</li>
+      <li>launcher button</li>
+    </ul>
+    <p>Depois adicione:</p>
+    <ul class="topics">
+      <li>áudio</li>
+      <li>rede</li>
+      <li>Bluetooth</li>
+      <li>bateria</li>
+      <li>indicadores</li>
+    </ul>
+
+    <h2>Fase 7 — D-Bus</h2>
+    <p>Implemente serviços separadamente (<a href="servicos-dbus.html">referência</a>):</p>
+    <ol>
+      <li>Notifications</li>
+      <li>Audio</li>
+      <li>NetworkManager</li>
+      <li>Bluetooth</li>
+      <li>UPower</li>
+    </ol>
+
+    <h2>Fase 8 — Launcher</h2>
+    <p>Pesquise (<a href="componentes.html">referência</a>):</p>
+    <ul class="topics">
+      <li><code>.desktop</code></li>
+      <li>XDG</li>
+      <li>indexação</li>
+      <li>fuzzy search</li>
+      <li>processo de execução</li>
+    </ul>
+
+    <h2>Fase 9 — Control Center</h2>
+    <p>Integre (<a href="servicos-dbus.html">referência</a>):</p>
+    <ul class="topics">
+      <li>áudio</li>
+      <li>rede</li>
+      <li>Bluetooth</li>
+      <li>brilho</li>
+      <li>bateria</li>
+      <li>energia</li>
+    </ul>
+
+    <h2>Fase 10 — Windows/Workspaces</h2>
+    <p>Integre (<a href="componentes.html">referência</a>):</p>
+    <ul class="topics">
+      <li>foreign toplevel</li>
+      <li>workspaces</li>
+      <li>compositor-specific IPC</li>
+    </ul>
+
+    <h2>Fase 11 — Lock</h2>
+    <p>Pesquise (<a href="componentes.html">referência</a>):</p>
+    <ul class="topics">
+      <li>session lock</li>
+      <li>PAM</li>
+      <li>secure input</li>
+      <li>idle</li>
+    </ul>
+
+    <h2>Fase 12 — Wallpaper</h2>
+    <p>Adicione (<a href="componentes.html">referência</a>):</p>
+    <ul class="topics">
+      <li>múltiplos monitores</li>
+      <li>scaling</li>
+      <li>cache</li>
+      <li>GPU textures</li>
+    </ul>
+
+    <h2>Fase 13 — Config + IPC</h2>
+    <p>Finalize (<a href="infra.html">referência</a>):</p>
+    <ul class="topics">
+      <li>TOML</li>
+      <li>hot reload</li>
+      <li>Unix socket</li>
+      <li>CLI</li>
+    </ul>
+
+    <h2>Fase 14 — Otimização</h2>
+    <p><strong>Só depois de funcional</strong> (<a href="infra.html">referência</a>):</p>
+    <ul class="topics">
+      <li>profiling</li>
+      <li>allocations</li>
+      <li>GPU profiling</li>
+      <li>redraw optimization</li>
+      <li>startup time</li>
+      <li>memory usage</li>
+      <li>input latency</li>
+    </ul>
+
+    <hr>
+
+    <h2>O que NÃO estudar primeiro</h2>
+    <p>Não comece por:</p>
+    <ul class="topics">
+      <li>Smithay internals</li>
+      <li>DRM/KMS</li>
+      <li>compositor implementation</li>
+      <li>XWayland internals</li>
+      <li>wlroots internals</li>
+      <li>GPU driver development</li>
+    </ul>
+    <div class="note">
+      <p>Esses assuntos são muito importantes para <strong>um compositor Wayland</strong>, mas não são necessários para o primeiro estágio de um desktop shell. Se posteriormente o objetivo for criar seu próprio compositor/WM em Rust, aí sim eles passam a ser centrais.</p>
+    </div>
+
+    <hr>
+
+    <h2>Recursos para pesquisa</h2>
+    <p>Pesquise sempre primeiro nas documentações oficiais/projetos:</p>
+    <ul>
+      <li><a href="https://wayland.freedesktop.org/docs/html/">Wayland Documentation</a> · <a href="https://wayland.app/protocols/">Wayland Protocols</a></li>
+      <li><a href="https://docs.rs/wayland-client">wayland-client</a> · <a href="https://docs.rs/wayland-backend">wayland-backend</a> · <a href="https://docs.rs/wayland-protocols">wayland-protocols</a></li>
+      <li><a href="https://wayland.app/protocols/wlr-layer-shell-unstable-v1">wlr-layer-shell</a></li>
+      <li><a href="https://github.com/Smithay/smithay">Smithay</a> · <a href="https://gitlab.freedesktop.org/wlroots/wlroots">wlroots</a></li>
+      <li><a href="https://wgpu.rs">wgpu</a></li>
+      <li><a href="https://pipewire.org">PipeWire</a> · <a href="https://gitlab.freedesktop.org/pipewire/wireplumber">WirePlumber</a></li>
+      <li><a href="https://dbus.freedesktop.org/doc/dbus-specification.html">D-Bus</a> · <a href="https://docs.rs/zbus">zbus</a></li>
+      <li><a href="https://networkmanager.dev">NetworkManager</a></li>
+      <li><a href="http://www.bluez.org">BlueZ</a></li>
+      <li><a href="https://upower.freedesktop.org">UPower</a></li>
+      <li><a href="https://specifications.freedesktop.org/desktop-entry-spec/latest/">Desktop Entry Specification</a> · <a href="https://specifications.freedesktop.org/basedir-spec/latest/">XDG Specifications</a></li>
+      <li><a href="https://github.com/swaywm/sway">Sway IPC</a> · <a href="https://wiki.hyprland.org">Hyprland IPC</a> · <a href="https://github.com/YaLTeR/niri">Niri IPC</a></li>
+      <li><a href="https://github.com/noctalia-dev/noctalia-shell">Noctalia</a> (shell de referência em Rust)</li>
+      <li><a href="https://iced.rs">Iced</a> · <a href="https://slint.dev">Slint</a> · <a href="https://egui.rs">egui</a> · <a href="https://github.com/pop-os/cosmic-epoch">Cosmic Toolkit</a></li>
+      <li><a href="https://doc.rust-lang.org/book/">The Rust Book</a> · <a href="https://github.com/rust-lang/rustlings">Rustlings</a> · <a href="https://tokio.rs/tokio/tutorial">Tokio Tutorial</a></li>
+    </ul>
+
+    <h2>Mapa de fontes: onde buscar cada coisa</h2>
+    <p>A dúvida "onde acho isso?" tem resposta padronizada no ecossistema Rust:</p>
+    <table>
+      <tr><th>Preciso de...</th><th>Onde buscar</th></tr>
+      <tr><td>API exata de um crate</td><td><a href="https://docs.rs">docs.rs</a> — sempre a versão do seu <code>Cargo.toml</code>; quase toda doc tem exemplos no topo</td></tr>
+      <tr><td>Requests/events de um protocolo Wayland</td><td><a href="https://wayland.app/protocols/">wayland.app/protocols</a> — spec navegável de cada interface</td></tr>
+      <tr><td>Conceitos de Wayland</td><td><a href="https://wayland-book.com">The Wayland Book</a> + <a href="https://wayland.freedesktop.org/docs/html/">wayland.freedesktop.org</a></td></tr>
+      <tr><td>Exemplos completos em Rust</td><td>pastas <code>examples/</code> dos repos: <a href="https://github.com/Smithay/wayland-rs">wayland-rs</a>, <a href="https://github.com/Smithay/client-toolkit">client-toolkit</a>, <a href="https://github.com/gfx-rs/wgpu">wgpu</a>, <a href="https://github.com/iced-rs/iced">iced</a></td></tr>
+      <tr><td>D-Bus (cliente e servidor)</td><td><a href="https://dbus2.github.io/zbus/">zbus book</a>, <a href="https://docs.rs/zbus">docs.rs/zbus</a>, <a href="https://dbus.freedesktop.org/doc/dbus-specification.html">spec D-Bus</a></td></tr>
+      <tr><td>Serviços (UPower, NM, BlueZ, Notifications)</td><td><a href="https://specifications.freedesktop.org">specifications.freedesktop.org</a> + doc de cada projeto</td></tr>
+      <tr><td>O SEU ambiente, agora</td><td>ferramentas de inspeção — ver abaixo</td></tr>
+    </table>
+
+    <h3>Ferramentas de inspeção (use antes de codificar)</h3>
+    <table>
+      <tr><th>Ferramenta</th><th>O que revela</th></tr>
+      <tr><td><code>wayland-info</code> (pacote <code>wayland-utils</code>)</td><td>os globals que o SEU compositor suporta — a lista de protocolos disponíveis para o shell</td></tr>
+      <tr><td><code>busctl --user tree</code> / <code>busctl introspect &lt;serviço&gt; &lt;objeto&gt;</code></td><td>os objetos, métodos, properties e signals reais do D-Bus da sua sessão</td></tr>
+      <tr><td><code>busctl --system ...</code></td><td>o system bus (UPower, NetworkManager, BlueZ)</td></tr>
+      <tr><td><code>d-feet</code> ou <code>qdbusviewer</code> (GUI)</td><td>mesma coisa do busctl, clicável</td></tr>
+      <tr><td><code>ls ~/.local/share/applications</code></td><td>os <code>.desktop</code> reais para testar seu parser</td></tr>
+      <tr><td><code>cat /sys/class/backlight/*/brightness</code></td><td>o backlight real do seu hardware</td></tr>
+    </table>
+    <div class="tip">
+      <p>Hábito que acelera tudo: antes de implementar qualquer integração, <strong>inspecione o serviço real</strong> (wayland-info, busctl, os arquivos .desktop) e só depois leia a spec/docs. Ver o dado real primeiro transforma documentação abstrata em algo concreto.</p>
+    </div>
+  </article>
+</main>
+
+<nav class="pager">
+  <a class="prev" href="infra.html">
+    <span class="dir">← anterior</span>
+    <span class="title">Configuração, IPC e performance</span>
+  </a>
+  <a class="next" href="index.html">
+    <span class="dir">voltar ao início →</span>
+    <span class="title">Página inicial</span>
+  </a>
+</nav>
+
+<footer class="site-footer">
+  Guia de estudo — Desktop Shell Wayland em Rust · <a href="index.html">início</a>
+</footer>
+
+</body>
+</html>
